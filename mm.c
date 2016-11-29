@@ -24,11 +24,11 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "ateam",
+    "SuperAllocator",
     /* First member's full name */
-    "Harry Bovik",
+    "Quan Vuong",
     /* First member's email address */
-    "bovik@cs.cmu.edu",
+    "qhv200@nyu.edu",
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
@@ -37,12 +37,57 @@ team_t team = {
 
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
-
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
 
-
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
+#define WSIZE     4          // word and header/footer size (bytes)
+#define DSIZE     8          // double word size (bytes)
+#define INITCHUNKSIZE (1<<6)
+#define CHUNKSIZE (1<<12)
+
+#define SEG_LIST_NUM     20      
+#define REALLOC_BUFFER  (1<<7)    
+
+#define MAX(x, y) ((x) > (y) ? (x) : (y)) 
+#define MIN(x, y) ((x) < (y) ? (x) : (y)) 
+
+// Pack a size and allocated bit into a word
+#define PACK(size, alloc) ((size) | (alloc))
+
+// Read and write a word at address p 
+#define GET(p)      (*(unsigned int *)(p))
+#define PUT(p, val)     (*(unsigned int *)(p) = (val))
+
+// Store predecessor or successor pointer for free blocks 
+#define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
+
+// Read the size and allocation bit from address p 
+#define GET_SIZE(p)  (GET(p) & ~0x7)
+#define GET_ALLOC(p) (GET(p) & 0x1)
+#define GET_TAG(p)   (GET(p) & 0x2)
+
+// Address of block's header and footer 
+#define HDRP(ptr) ((char *)(ptr) - WSIZE)
+#define FTRP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr)) - DSIZE)
+
+// Address of (physically) next and previous blocks 
+#define NEXT_BLKP(ptr) ((char *)(ptr) + GET_SIZE((char *)(ptr) - WSIZE))
+#define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE((char *)(ptr) - DSIZE))
+
+// Address of free block's predecessor and successor entries 
+#define PRED_PTR(ptr) ((char *)(ptr))
+#define SUCC_PTR(ptr) ((char *)(ptr) + WSIZE)
+
+// Address of free block's predecessor and successor on the segregated list 
+#define PRED(ptr) (*(char **)(ptr))
+#define SUCC(ptr) (*(char **)(SUCC_PTR(ptr)))
+
+#define BP_SMALLER(bp, size) (GET_SIZE(HDRP(bp)) < size)
+#define BP_LARGER_EQUAL(bp, size) (GET_SIZE(HDRP(bp)) >= size)
+
+// Global variables and function declarations
 
 /* 
  * mm_init - initialize the malloc package.
