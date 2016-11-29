@@ -89,6 +89,9 @@ team_t team = {
 
 // Global variables and function declarations
 
+static void *coalesce(void *bp);
+static void * extend_heap(size_t bytes);
+
 /* 
  * mm_init - initialize the malloc package.
  */
@@ -140,7 +143,73 @@ void *mm_realloc(void *ptr, size_t size)
     return newptr;
 }
 
+static void *coalesce(void *bp)
+{
+    int size_prev_block = GET_SIZE((char *)(bp) - DSIZE);
+    void * prev_block = (void *) ((char *)(bp) - size_prev_block);
 
+    // void * prev_block = PREV_BLKP(bp);
+    size_t prev_alloc = GET_ALLOC(FTRP(prev_block));
+    void * next_block = NEXT_BLKP(bp);
+    size_t next_alloc = GET_ALLOC(HDRP(next_block));
+    size_t size = GET_SIZE(HDRP(bp));
+
+    if (prev_alloc && next_alloc)
+    { /* Case 1 */
+        return bp;
+    }
+
+    else if (prev_alloc && !next_alloc)
+    { /* Case 2 */
+        remove_free_block(bp);
+        remove_free_block(NEXT_BLKP(bp));
+        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size, 0));
+    }
+
+    else if (!prev_alloc && next_alloc)
+    { /* Case 3 */
+        remove_free_block(bp);
+        remove_free_block(PREV_BLKP(bp));
+        size += GET_SIZE(HDRP(PREV_BLKP(bp)));
+        PUT(FTRP(bp), PACK(size, 0));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+        bp = PREV_BLKP(bp);
+    }
+
+    else
+    { /* Case 4 */
+        remove_free_block(bp);
+        remove_free_block(NEXT_BLKP(bp));
+        remove_free_block(PREV_BLKP(bp));
+        size += GET_SIZE(HDRP(PREV_BLKP(bp))) +
+                GET_SIZE(FTRP(NEXT_BLKP(bp)));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
+        bp = PREV_BLKP(bp);
+    }
+
+    return bp;
+}
+
+static void * extend_heap(size_t bytes)
+{
+    void * ptr;
+    size_t size = ALIGN(bytes);
+
+    if ((ptr = mem_sbrk(size)) == (void *) -1)
+        return NULL;
+    
+    // Initialize the new block header, footer, and new epilog
+    PUT(HDRP(ptr), PACK(size, 0)); // header
+    PUT(FTRP(ptr), PACK(size, 0)); // footer
+    PUT(HDRP(NEXT_BLKP(ptr)), PACK(0, 1)); // epilog, size 1, allocated
+
+    add_free_block(ptr);
+
+    return coalesce(ptr);
+}
 
 
 
