@@ -170,6 +170,8 @@ void *mm_realloc(void *ptr, size_t size)
 
 static void test_find_free_list_index()
 {
+    printf("Testing test_find_free_list_index.\n");
+
     int index_2 = find_free_list_index(5);
     int index_3 = find_free_list_index(15);
     int index_10 = find_free_list_index(1024);
@@ -179,6 +181,7 @@ static void test_find_free_list_index()
     assert(index_3 == 3);
     assert(index_10 == 10);
     assert(index_11 == 11);
+    printf("Test passed.\n");
 }
 
 int mm_check()
