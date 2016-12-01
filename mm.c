@@ -172,15 +172,27 @@ static void test_find_free_list_index()
 {
     printf("Testing test_find_free_list_index.\n");
 
-    int index_2 = find_free_list_index(5);
-    int index_3 = find_free_list_index(15);
-    int index_10 = find_free_list_index(1024);
-    int index_11 = find_free_list_index(2048);
+    int index_0 = find_free_list_index(0);
+    assert(index_0 == 0);
 
+    int index_2 = find_free_list_index(5);
     assert(index_2 == 2);
+
+    int index_3 = find_free_list_index(15);
     assert(index_3 == 3);
+
+    int index_9 = find_free_list_index(1023);
+    assert(index_9 == 9);
+
+    int index_10 = find_free_list_index(1024);
     assert(index_10 == 10);
+
+    int index_11 = find_free_list_index(2048);
     assert(index_11 == 11);
+    
+    int index_20 = find_free_list_index(1048600);
+    assert(index_20 == 20);
+    
     printf("Test passed.\n");
 }
 
