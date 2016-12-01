@@ -54,6 +54,7 @@ static char *heap_ptr;
 
 // Function Declarations
 static size_t find_free_list_index(size_t words);
+static void test_find_free_list_index();
 
 /*
 	Find the index of the free list which given size belongs to.
@@ -127,7 +128,7 @@ static void place_block_into_free_list(void *bp) {
  */
 int mm_init(void)
 {
-
+    test_find_free_list_index();
 }
 
 /*
@@ -167,14 +168,17 @@ void *mm_realloc(void *ptr, size_t size)
     return newptr;
 }
 
-static int test_find_free_list_index()
+static void test_find_free_list_index()
 {
     int index_2 = find_free_list_index(5);
     int index_3 = find_free_list_index(15);
     int index_10 = find_free_list_index(1024);
     int index_11 = find_free_list_index(2048);
 
-    assert()
+    assert(index_2 == 2);
+    assert(index_3 == 3);
+    assert(index_10 == 10);
+    assert(index_11 == 11);
 }
 
 int mm_check()
