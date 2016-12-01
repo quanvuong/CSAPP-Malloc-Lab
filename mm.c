@@ -116,7 +116,7 @@ static void place_block_into_free_list(void *bp) {
  */
 int mm_init(void)
 {
-
+	// change
 }
 
 /*
