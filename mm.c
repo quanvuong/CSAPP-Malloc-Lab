@@ -38,6 +38,7 @@ team_t team = {
 #define ALIGNMENT 8
 /* rounds up to the nearest multiple of ALIGNMENT */
 <<<<<<< HEAD
+<<<<<<< HEAD
 #define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
@@ -49,6 +50,12 @@ team_t team = {
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
+=======
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
+
+#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
+>>>>>>> parent of e473500... working version from the book
 #define WSIZE     4          // word and header/footer size (bytes)
 #define DSIZE     8          // double word size (bytes)
 #define INITCHUNKSIZE (1<<6)
@@ -60,6 +67,7 @@ team_t team = {
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y)) 
 #define MIN(x, y) ((x) < (y) ? (x) : (y)) 
+<<<<<<< HEAD
 
 // Pack a size and allocated bit into a word
 #define PACK(size, alloc) ((size) | (alloc))
@@ -370,11 +378,60 @@ static void *find_fit(size_t size);
 static void *coalesce(void *ptr);
 >>>>>>> parent of e473500... working version from the book
 
+=======
+
+// Pack a size and allocated bit into a word
+#define PACK(size, alloc) ((size) | (alloc))
+
+// Read and write a word at address p 
+#define GET(p)      (*(unsigned int *)(p))
+#define PUT(p, val)     (*(unsigned int *)(p) = (val))
+
+// Store predecessor or successor pointer for free blocks 
+#define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
+
+// Read the size and allocation bit from address p 
+#define GET_SIZE(p)  (GET(p) & ~0x7)
+#define GET_ALLOC(p) (GET(p) & 0x1)
+#define GET_TAG(p)   (GET(p) & 0x2)
+
+// Address of block's header and footer 
+#define HDRP(ptr) ((char *)(ptr) - WSIZE)
+#define FTRP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr)) - DSIZE)
+
+// Address of (physically) next and previous blocks 
+#define NEXT_BLKP(ptr) ((char *)(ptr) + GET_SIZE((char *)(ptr) - WSIZE))
+#define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE((char *)(ptr) - DSIZE))
+
+// Address of free block's predecessor and successor entries 
+#define PRED_PTR(ptr) ((char *)(ptr))
+#define SUCC_PTR(ptr) ((char *)(ptr) + WSIZE)
+
+// Address of free block's predecessor and successor on the segregated list 
+#define PRED(ptr) (*(char **)(ptr))
+#define SUCC(ptr) (*(char **)(SUCC_PTR(ptr)))
+
+#define BP_SMALLER(bp, size) (GET_SIZE(HDRP(bp)) < size)
+#define BP_LARGER_EQUAL(bp, size) (GET_SIZE(HDRP(bp)) >= size)
+
+// Global variables and function declarations
+void * prolog_p; // point to the start of the ftr of prolog
+
+static void * extend_heap(size_t bytes);
+static void add_free_block(void *bp);
+// static int which_free_list(size_t s);
+static void remove_free_block(void *bp);
+static void place(void *bp, size_t requested_size);
+static void *find_fit(size_t size);
+static void *coalesce(void *ptr);
+
+>>>>>>> parent of e473500... working version from the book
 /* 
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
+<<<<<<< HEAD
 <<<<<<< HEAD
     for (int i = 0; i < NUM_FREE_LIST; i++)
     {
@@ -396,6 +453,8 @@ int mm_init(void)
 	return -1;
     }
 =======
+=======
+>>>>>>> parent of e473500... working version from the book
     /* Create heap basic prologue, epilogue */
     if ((prolog_p = mem_sbrk(4*WSIZE)) == (void *) -1) return -1;
 
@@ -408,6 +467,9 @@ int mm_init(void)
     /* Allocate additional space to the heap */
     if (extend_heap(CHUNKSIZE) == NULL) 
         return -1;
+<<<<<<< HEAD
+>>>>>>> parent of e473500... working version from the book
+=======
 >>>>>>> parent of e473500... working version from the book
 
     return 0;
@@ -419,6 +481,7 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
+<<<<<<< HEAD
 <<<<<<< HEAD
     size_t asize;
     size_t extendsize;
@@ -451,6 +514,8 @@ void *mm_malloc(size_t size)
     }
     place(bp, asize);
 =======
+=======
+>>>>>>> parent of e473500... working version from the book
     if (size == 0) return NULL;
 
     size_t extend_size;
@@ -475,6 +540,9 @@ void *mm_malloc(size_t size)
         return NULL;
     place(bp, asize);
 
+<<<<<<< HEAD
+>>>>>>> parent of e473500... working version from the book
+=======
 >>>>>>> parent of e473500... working version from the book
     return bp;
 }
@@ -484,6 +552,7 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *bp)
 {
+<<<<<<< HEAD
 <<<<<<< HEAD
     size_t size = GET_SIZE(HDRP(ptr));
 
@@ -495,6 +564,12 @@ void mm_free(void *bp)
     coalesce(ptr);
 
     return;
+=======
+    unsigned int size = GET_SIZE(HDRP(bp));
+
+    PUT(HDRP(bp), PACK(size, 0)); 
+	PUT(FTRP(bp), PACK(size, 0));
+>>>>>>> parent of e473500... working version from the book
 =======
     unsigned int size = GET_SIZE(HDRP(bp));
 
@@ -515,8 +590,13 @@ void *mm_realloc(void *ptr, size_t size)
     newptr = mm_malloc(size);
     if (newptr == NULL)
 <<<<<<< HEAD
+<<<<<<< HEAD
 	return NULL;
     copySize = *(size_t *)((char *)oldptr - WSIZE);
+=======
+      return NULL;
+    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+>>>>>>> parent of e473500... working version from the book
 =======
       return NULL;
     copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
@@ -611,6 +691,7 @@ static void *find_fit(size_t size)
 }
 
 static void add_free_block(void *bp)
+<<<<<<< HEAD
 {
 <<<<<<< HEAD
 =======
@@ -629,6 +710,23 @@ static void remove_free_block(void *bp)
 	PUT(FTRP(bp), PACK(size, 1));
 }
 
+=======
+{
+    unsigned int size = GET_SIZE(HDRP(bp));
+
+    PUT(HDRP(bp), PACK(size, 0)); 
+	PUT(FTRP(bp), PACK(size, 0));
+}
+
+static void remove_free_block(void *bp)
+{
+    unsigned int size = GET_SIZE(HDRP(bp));
+
+    PUT(HDRP(bp), PACK(size, 1)); 
+	PUT(FTRP(bp), PACK(size, 1));
+}
+
+>>>>>>> parent of e473500... working version from the book
 static void place(void *bp, size_t requested_size)
 {
     remove_free_block(bp);
