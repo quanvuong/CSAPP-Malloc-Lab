@@ -61,12 +61,11 @@ static size_t find_free_list_index(size_t words);
 	Index can be from 0 to MAX_POWER.
 */
 static size_t find_free_list_index(size_t words) {
-    unsigned int bytes = words * WORD_SIZE;
     int index = 0;
 
-    while (index <= MAX_POWER && (bytes > 1))
+    while ((index <= MAX_POWER) && (words > 1))
     {
-        bytes >>= 1;
+        words >>= 1;
         index++;
     }
 
@@ -166,6 +165,16 @@ void *mm_realloc(void *ptr, size_t size)
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
+}
+
+static int test_find_free_list_index()
+{
+    int index_2 = find_free_list_index(5);
+    int index_3 = find_free_list_index(15);
+    int index_10 = find_free_list_index(1024);
+    int index_11 = find_free_list_index(2048);
+
+    assert()
 }
 
 int mm_check()
