@@ -52,13 +52,25 @@ static char *main_free_list[MAX_POWER + 1];
 
 static char *heap_ptr;
 
+// Function Declarations
+static size_t find_free_list_index(size_t words);
+static void test_find_free_list_index();
+
 /*
 	Find the index of the free list which given size belongs to.
 	Returns index.
 	Index can be from 0 to MAX_POWER.
 */
 static size_t find_free_list_index(size_t words) {
+    int index = 0;
 
+    while ((index <= MAX_POWER) && (words > 1))
+    {
+        words >>= 1;
+        index++;
+    }
+
+    return index;
 }
 
 /*
@@ -116,7 +128,7 @@ static void place_block_into_free_list(void *bp) {
  */
 int mm_init(void)
 {
-
+    test_find_free_list_index();
 }
 
 /*
@@ -154,6 +166,46 @@ void *mm_realloc(void *ptr, size_t size)
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
+}
+
+static void test_find_free_list_index()
+{
+    printf("Testing test_find_free_list_index.\n");
+
+    int index_0 = find_free_list_index(0);
+    assert(index_0 == 0);
+
+    index_0 = find_free_list_index(1);
+    assert(index_0 == 0);
+
+    int index_1 = find_free_list_index(2);
+    assert(index_1 == 1);
+
+    index_1 = find_free_list_index(3);
+    assert(index_1 == 1);
+
+    int index_2 = find_free_list_index(4);
+    assert(index_2 == 2);
+
+    index_2 = find_free_list_index(5);
+    assert(index_2 == 2);
+
+    int index_3 = find_free_list_index(15);
+    assert(index_3 == 3);
+
+    int index_9 = find_free_list_index(1023);
+    assert(index_9 == 9);
+
+    int index_10 = find_free_list_index(1024);
+    assert(index_10 == 10);
+
+    int index_11 = find_free_list_index(2048);
+    assert(index_11 == 11);
+    
+    int index_20 = find_free_list_index(1048600);
+    assert(index_20 == 20);
+    
+    printf("Test passed.\n");
 }
 
 int mm_check()
