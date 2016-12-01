@@ -24,112 +24,91 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "theteam",
+    "qhv200+vr697",
     /* First member's full name */
     "Vasily Rudchenko",
     /* First member's email address */
     "vr697@nyu.edu",
     /* Second member's full name (leave blank if none) */
-    "",
+    "Quan Vuong",
     /* Second member's email address (leave blank if none) */
-    ""
+    "qhv200@nyu.edu"
 };
 
-/* single word (4) or double word (8) alignment */
-#define ALIGNMENT 8
-/* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
-#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+#define MAX_POWER 20
+#define TAKEN 0
+#define FREE 1
 
-#define WSIZE 4
-#define DSIZE 8
-#define CHUNKSIZE (1<<12)
+#define WORD_SIZE 4 /* bytes */
+#define CHUNK (1<<12) /* extend heap by this amount (bytes) */
 
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
+#define GET_BYTE(p) (*(char *)(p))
+#define GET_WORD(p) (*(unsigned int *)(p))
 
-#define PACK(size, alloc) ((size) | (alloc))
+// TODO: Add macros to be defined and tested
 
-#define GET(p) (*(unsigned int *)(p))
-#define PUT(p, val) (*(unsigned int *)(p) = (val))
 
-#define GET_SIZE(p) (GET(p) & ~0x7)
-#define GET_ALLOC(p) (GET(p) & 0x1)
+static char *main_free_list[MAX_POWER + 1];
 
-#define HDRP(bp) ((char *)(bp) - WSIZE)
-#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+static char *heap_ptr;
 
-#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
-#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
+/*
+	Find the index of the free list which given size belongs to.
+	Returns index.
+	Index can be from 0 to MAX_POWER.
+*/
+static size_t find_free_list_index(size_t words) {
 
-static char *heap_listp;
+}
 
+/*
+	The function combines the current block in
+	physical memory with neigboring free blocks.
+	Returns the pointer to the beginning of this
+	new free block.
+*/
 static void *coalesce(void *bp) {
-	size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
-	size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-	size_t size = GET_SIZE(HDRP(bp));
 
-	if (prev_alloc && next_alloc) {
-		return bp;
-	} else if (prev_alloc && !next_alloc) {
-		size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-		PUT(HDRP(bp), PACK(size, 0));
-		PUT(FTRP(bp), PACK(size, 0));
-	} else if (!prev_alloc && next_alloc) {
-		size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-		PUT(FTRP(bp), PACK(size, 0));
-		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-		bp = PREV_BLKP(bp);
-	} else {
-		size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
-		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-		PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
-		bp = PREV_BLKP(bp);
-	}
-
-	return bp;
 }
 
+/*
+	Relies on mem_sbrk to create a new free block.
+	Does not coalesce.
+	Returns pointer to the new block of memory with
+	header and footer already defined.
+	Returns NULL if we ran out of physical memory.
+*/
 static void *extend_heap(size_t words) {
-	char *bp;
-	size_t size;
 
-	size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE;
-	if ((long)(bp = mem_sbrk(size)) == -1) {
-		return NULL;
-	}
-
-	PUT(HDRP(bp), PACK(size, 0));
-	PUT(FTRP(bp), PACK(size, 0));
-	PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
-
-	return coalesce(bp);
 }
 
-static void *find_fit(size_t asize) {
-	void *bp;
+/*
+	Finds the block from the main_free_list that is large
+	enough to hold the amount of words specified.
+	Returns the pointer to that block.
+	Does not take the block out of the free list.
+	Returns the pointer to the block.
+	Returns NULL if block large enough is not found.
+*/
+static void *find_free_block(size_t words) {
 
-	for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-		if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-			return bp;
-		}
-	}
-
-	return NULL;
 }
 
-static void place(void *bp, size_t asize) {
-	size_t csize = GET_SIZE(HDRP(bp));
+/*
+	Assume that size in words given is <= the size of the block at input.
+	bp input is the block that you found already that is large enough.
+	The function reduces the size of the block if it is too large.
+	The remaining size is either placed in free_list or left hanging if it is 0.
+*/
+static void alloc_free_block(void *bp, size_t words) {
 
-	if ((csize - asize) >= (2*DSIZE)) {
-		PUT(HDRP(bp), PACK(asize, 1));
-		PUT(FTRP(bp), PACK(asize, 1));
-		bp = NEXT_BLKP(bp);
-		PUT(HDRP(bp), PACK(csize - asize, 0));
-		PUT(FTRP(bp), PACK(csize - asize, 0));
-	} else {
-		PUT(HDRP(bp), PACK(csize, 1));
-		PUT(FTRP(bp), PACK(csize, 1));
-	}
+}
+
+/*
+	Places the block into the free list based on block size.
+*/
+static void place_block_into_free_list(void *bp) {
+
 }
 
 /*
@@ -137,20 +116,7 @@ static void place(void *bp, size_t asize) {
  */
 int mm_init(void)
 {
-	if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1) {
-		return -1;
-	}
-	PUT(heap_listp, 0);
-	PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1));
-	PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1));
-	PUT(heap_listp + (3*WSIZE), PACK(0, 1));
-	heap_listp += (2*WSIZE);
 
-	if (extend_heap(CHUNKSIZE/WSIZE) == NULL) {
-		return -1;
-	}
-
-  return 0;
 }
 
 /*
@@ -159,31 +125,7 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-	size_t asize;
-	size_t extendsize;
-	char *bp;
 
-	if (size == 0) {
-		return NULL;
-	}
-
-	if (size <= DSIZE) {
-		asize = 2*DSIZE;
-	} else {
-		asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
-	}
-
-	if ((bp = find_fit(asize)) != NULL) {
-		place(bp, asize);
-		return bp;
-	}
-
-	extendsize = MAX(asize, CHUNKSIZE);
-	if ((bp = extend_heap(extendsize/WSIZE)) == NULL) {
-		return NULL;
-	}
-	place(bp, asize);
-	return bp;
 }
 
 /*
@@ -191,12 +133,7 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-	size_t size = GET_SIZE(HDRP(ptr));
 
-	PUT(HDRP(ptr), PACK(size, 0));
-	PUT(FTRP(ptr), PACK(size, 0));
-
-	coalesce(ptr);
 }
 
 /*
@@ -211,7 +148,7 @@ void *mm_realloc(void *ptr, size_t size)
     newptr = mm_malloc(size);
     if (newptr == NULL)
       return NULL;
-    copySize = *(size_t *)((char *)oldptr - WSIZE);
+    copySize = *(size_t *)((char *)oldptr - 4);
     if (size < copySize)
       copySize = size;
     memcpy(newptr, oldptr, copySize);
