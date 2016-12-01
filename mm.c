@@ -175,7 +175,19 @@ static void test_find_free_list_index()
     int index_0 = find_free_list_index(0);
     assert(index_0 == 0);
 
-    int index_2 = find_free_list_index(5);
+    index_0 = find_free_list_index(1);
+    assert(index_0 == 0);
+
+    int index_1 = find_free_list_index(2);
+    assert(index_1 == 1);
+
+    index_1 = find_free_list_index(3);
+    assert(index_1 == 1);
+
+    int index_2 = find_free_list_index(4);
+    assert(index_2 == 2);
+
+    index_2 = find_free_list_index(5);
     assert(index_2 == 2);
 
     int index_3 = find_free_list_index(15);
