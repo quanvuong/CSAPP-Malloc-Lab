@@ -87,7 +87,7 @@ static void *coalesce(void *bp) {
 	Relies on mem_sbrk to create a new free block.
 	Does not coalesce.
 	Returns pointer to the new block of memory with
-	header and foo   ter already defined.
+	header and footer already defined.
 	Returns NULL if we ran out of physical memory.
 */
 static void *extend_heap(size_t words) {
