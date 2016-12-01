@@ -60,7 +60,6 @@ static void *extend_heap(size_t words);
 static void test_extend_heap();
 
 static void *coalesce(void *bp);
-static void *extend_heap(size_t words);
 static void *find_free_block(size_t words);
 static void alloc_free_block(void *bp, size_t words);
 static void place_block_into_free_list(void *bp);
