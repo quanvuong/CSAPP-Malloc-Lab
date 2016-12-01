@@ -52,13 +52,25 @@ static char *main_free_list[MAX_POWER + 1];
 
 static char *heap_ptr;
 
+// Function Declarations
+static size_t find_free_list_index(size_t words);
+
 /*
 	Find the index of the free list which given size belongs to.
 	Returns index.
 	Index can be from 0 to MAX_POWER.
 */
 static size_t find_free_list_index(size_t words) {
+    unsigned int bytes = words * WORD_SIZE;
+    int index = 0;
 
+    while (index <= MAX_POWER && (bytes > 1))
+    {
+        bytes >>= 1;
+        index++;
+    }
+
+    return index;
 }
 
 /*
@@ -75,7 +87,7 @@ static void *coalesce(void *bp) {
 	Relies on mem_sbrk to create a new free block.
 	Does not coalesce.
 	Returns pointer to the new block of memory with
-	header and footer already defined.
+	header and foo   ter already defined.
 	Returns NULL if we ran out of physical memory.
 */
 static void *extend_heap(size_t words) {
