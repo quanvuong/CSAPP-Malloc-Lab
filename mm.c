@@ -79,8 +79,15 @@ team_t team = {
 // p must point to a header
 #define GET_TOTAL_SIZE(p) (GET_SIZE(p) + HDR_FTR_SIZE)
 
-static char *main_free_list[MAX_POWER + 1];
+// Define this so later when we move to store the list in heap,
+// we can just change this function 
+#define GET_FREE_LIST_PTR(i) (main_free_list[i])
 
+#define SET_FREE_LIST_PTR(i, ptr) (main_free_list[i] = ptr)
+
+
+// Global variables
+static char *main_free_list[MAX_POWER + 1];
 static char *heap_ptr;
 
 // Function Declarations
@@ -168,6 +175,11 @@ static void place_block_into_free_list(void *bp) {
  */
 int mm_init(void)
 {
+    // Initialize the free list 
+    for (int i = 0; i <= MAX_POWER; i++) {
+        main_free_list[i] = NULL;
+    }
+
     mm_check();
 }
 
@@ -346,6 +358,14 @@ static void test_FTRP()
     printf("Test passed.\n\n");
 }
 
+static void test_MAIN_FREE_LIST_INIT()
+{
+    printf("Test MAIN_FREE_LIST_INIT.\n");
+    for (int i = 0; i <= MAX_POWER; i++)
+        assert(GET_FREE_LIST_PTR(i) == NULL);
+    printf("Test passed.\n\n");
+}
+
 int mm_check()
 {
     test_find_free_list_index();
@@ -356,4 +376,5 @@ int mm_check()
     test_PACK();
     test_PUT_WORD();
     test_FTRP();
+    test_MAIN_FREE_LIST_INIT();
 }
