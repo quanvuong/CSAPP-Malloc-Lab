@@ -42,28 +42,32 @@ team_t team = {
 #define WORD_SIZE 4 /* bytes */
 #define D_WORD_SIZE 8
 #define CHUNK (1<<12) /* extend heap by this amount (bytes) */
-#define STATUS_SIZE 3 // bits
+#define STATUS_BIT_SIZE 3 // bits
+#define HDR_FTR_SIZE 2 // in words
 
 // Read and write a word at address p 
 #define GET_BYTE(p) (*(char *)(p))
 #define GET_WORD(p) (*(unsigned int *)(p))
 #define PUT_WORD(p, val) (*(char **)(p) = (val))
 
+// Get a bit mask where the lowest size bit is set to 1
+#define GET_MASK(size) ((1 << size) - 1)
+
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
 
 /* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 
-// Pack a size and allocated bit into a word
-#define PACK(size, status) ((size<<STATUS_SIZE) | (status))
+// Pack a size and allocated bit into a wBIT_ord
+#define PACK(size, status) ((size<<STATUS_BIT_SIZE) | (status))
 
 /* Round up to even */
 #define EVENIZE(x) ((x + 1) & ~1)
 
 // Read the size and allocation bit from address p 
-#define GET_SIZE(p)  ((GET_WORD(p) & ~0x7) >> STATUS_SIZE)
-#define GET_ALLOC(p) (GET_WORD(p) & 0x1)
+#define GET_SIZE(p)  ((GET_WORD(p) & ~GET_MASK(STATUS_BIT_SIZE)) >> STATUS_BIT_SIZE)
+#define GET_STATUS(p) (GET_WORD(p) & 0x1)
 
 // Address of block's footer 
 // Take in a pointer that points to the header
@@ -73,7 +77,7 @@ team_t team = {
 // Size indicates the size of the free space in a block 
 // Total size = size + size_of_header + size_of_footer = size + D_WORD_SIZE
 // p must point to a header
-#define GET_TOTAL_SIZE(p) (GET_SIZE(p) + D_WORD_SIZE)
+#define GET_TOTAL_SIZE(p) (GET_SIZE(p) + HDR_FTR_SIZE)
 
 static char *main_free_list[MAX_POWER + 1];
 
@@ -268,27 +272,27 @@ static void test_GET_SIZE()
 {
     printf("Test GET_SIZE.\n");
 
-    size_t size_8 = 8 << STATUS_SIZE;
+    size_t size_8 = 8 << STATUS_BIT_SIZE;
     assert(8 == GET_SIZE(&size_8));
 
-    size_t size_0 = 0 << STATUS_SIZE;
+    size_t size_0 = 0 << STATUS_BIT_SIZE;
     assert(0 == GET_SIZE(&size_0));
 
-    size_t size_1 = 1 << STATUS_SIZE;
+    size_t size_1 = 1 << STATUS_BIT_SIZE;
     assert(1 == GET_SIZE(&size_1));
 
     printf("Test passed.\n\n");
 }
 
-static void test_GET_ALLOC()
+static void test_GET_STATUS()
 {
-    printf("Test GET_ALLOC.\n");
+    printf("Test GET_STATUS.\n");
 
     size_t taken = 1;
     size_t free = 0;
 
-    assert(GET_ALLOC(&taken) == TAKEN);
-    assert(GET_ALLOC(&free) == FREE);
+    assert(GET_STATUS(&taken) == TAKEN);
+    assert(GET_STATUS(&free) == FREE);
 
     printf("Test passed.\n\n");
 }
@@ -299,11 +303,11 @@ static void test_PACK()
     printf("Test PACK.\n");
     int size_8_free = PACK(8, FREE);
     assert(GET_SIZE(&size_8_free) == 8);
-    assert(GET_ALLOC(&size_8_free) == FREE);
+    assert(GET_STATUS(&size_8_free) == FREE);
     
     int size_9_taken = PACK(9, TAKEN);
     assert(GET_SIZE(&size_9_taken) == 9);
-    assert(GET_ALLOC(&size_9_taken) == TAKEN);
+    assert(GET_STATUS(&size_9_taken) == TAKEN);
 
     printf("Test passed.\n\n");
 }
@@ -330,7 +334,7 @@ static void test_PUT_WORD()
 static void test_FTRP()
 {
     printf("Test FTRP.\n");
-    int test_block_size = 10; // Does not includ size of header and footer
+    int test_block_size = 10; // Does not include size of header and footer
     char **header_p;
     char **ptr = malloc(WORD_SIZE*test_block_size);
     header_p = ptr;
@@ -348,7 +352,7 @@ int mm_check()
     test_ALIGN();
     test_EVENIZE();
     test_GET_SIZE();
-    test_GET_ALLOC();
+    test_GET_STATUS();
     test_PACK();
     test_PUT_WORD();
     test_FTRP();
