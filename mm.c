@@ -36,17 +36,48 @@ team_t team = {
 };
 
 #define MAX_POWER 20
-#define TAKEN 0
-#define FREE 1
+#define TAKEN 1
+#define FREE 0
 
 #define WORD_SIZE 4 /* bytes */
+#define D_WORD_SIZE 8
 #define CHUNK (1<<12) /* extend heap by this amount (bytes) */
+#define STATUS_BIT_SIZE 3 // bits
+#define HDR_FTR_SIZE 2 // in words
 
+// Read and write a word at address p 
 #define GET_BYTE(p) (*(char *)(p))
 #define GET_WORD(p) (*(unsigned int *)(p))
+#define PUT_WORD(p, val) (*(char **)(p) = (val))
 
-// TODO: Add macros to be defined and tested
+// Get a bit mask where the lowest size bit is set to 1
+#define GET_MASK(size) ((1 << size) - 1)
 
+/* single word (4) or double word (8) alignment */
+#define ALIGNMENT 8
+
+/* rounds up to the nearest multiple of ALIGNMENT */
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
+
+// Pack a size and allocated bit into a wBIT_ord
+#define PACK(size, status) ((size<<STATUS_BIT_SIZE) | (status))
+
+/* Round up to even */
+#define EVENIZE(x) ((x + 1) & ~1)
+
+// Read the size and allocation bit from address p 
+#define GET_SIZE(p)  ((GET_WORD(p) & ~GET_MASK(STATUS_BIT_SIZE)) >> STATUS_BIT_SIZE)
+#define GET_STATUS(p) (GET_WORD(p) & 0x1)
+
+// Address of block's footer 
+// Take in a pointer that points to the header
+#define FTRP(header_p) ((char **)(header_p) + GET_SIZE(header_p) + 1)
+
+// Get total size of a block
+// Size indicates the size of the free space in a block 
+// Total size = size + size_of_header + size_of_footer = size + D_WORD_SIZE
+// p must point to a header
+#define GET_TOTAL_SIZE(p) (GET_SIZE(p) + HDR_FTR_SIZE)
 
 static char *main_free_list[MAX_POWER + 1];
 
@@ -54,7 +85,6 @@ static char *heap_ptr;
 
 // Function Declarations
 static size_t find_free_list_index(size_t words);
-static void test_find_free_list_index();
 
 static void *extend_heap(size_t words);
 static void test_extend_heap();
@@ -138,7 +168,7 @@ static void place_block_into_free_list(void *bp) {
  */
 int mm_init(void)
 {
-    test_find_free_list_index();
+    mm_check();
 }
 
 /*
@@ -215,10 +245,115 @@ static void test_find_free_list_index()
     int index_20 = find_free_list_index(1048600);
     assert(index_20 == 20);
     
-    printf("Test passed.\n");
+    printf("Test passed.\n\n");
+}
+
+static void test_ALIGN()
+{
+    printf("Test ALIGN.\n");
+    assert(0 == ALIGN(0));
+    assert(8 == ALIGN(1));
+    assert(8 == ALIGN(8));
+    assert(104 == ALIGN(100));
+    printf("Test passed.\n\n");
+};
+
+static void test_EVENIZE()
+{
+    printf("Test EVENIZE.\n");
+    assert(4 == EVENIZE(3));
+    assert(4 == EVENIZE(4));
+    assert(0 == EVENIZE(0));
+    assert(1002 == EVENIZE(1001));
+    printf("Test passed.\n\n");
+}
+
+static void test_GET_SIZE()
+{
+    printf("Test GET_SIZE.\n");
+
+    size_t size_8 = 8 << STATUS_BIT_SIZE;
+    assert(8 == GET_SIZE(&size_8));
+
+    size_t size_0 = 0 << STATUS_BIT_SIZE;
+    assert(0 == GET_SIZE(&size_0));
+
+    size_t size_1 = 1 << STATUS_BIT_SIZE;
+    assert(1 == GET_SIZE(&size_1));
+
+    printf("Test passed.\n\n");
+}
+
+static void test_GET_STATUS()
+{
+    printf("Test GET_STATUS.\n");
+
+    size_t taken = 1;
+    size_t free = 0;
+
+    assert(GET_STATUS(&taken) == TAKEN);
+    assert(GET_STATUS(&free) == FREE);
+
+    printf("Test passed.\n\n");
+}
+
+static void test_PACK()
+{
+    // size >= 8
+    printf("Test PACK.\n");
+    int size_8_free = PACK(8, FREE);
+    assert(GET_SIZE(&size_8_free) == 8);
+    assert(GET_STATUS(&size_8_free) == FREE);
+    
+    int size_9_taken = PACK(9, TAKEN);
+    assert(GET_SIZE(&size_9_taken) == 9);
+    assert(GET_STATUS(&size_9_taken) == TAKEN);
+
+    printf("Test passed.\n\n");
+}
+
+static void test_PUT_WORD()
+{   
+    printf("Test PUT_WORD.\n");
+    char ** p = malloc(WORD_SIZE);
+    int test_value_1 = 0;
+    int test_value_2 = 100;
+    int test_value_3 = 1 << 5;
+
+    PUT_WORD(p, test_value_1);
+    assert((*p) == test_value_1);
+
+    PUT_WORD(p, test_value_2);
+    assert((*p) == test_value_2);
+
+    PUT_WORD(p, test_value_3);
+    assert((*p) == test_value_3);
+    printf("Test passed.\n\n");
+}
+
+static void test_FTRP()
+{
+    printf("Test FTRP.\n");
+    int test_block_size = 10; // Does not include size of header and footer
+    char **header_p;
+    char **ptr = malloc(WORD_SIZE*test_block_size);
+    header_p = ptr;
+
+    PUT_WORD(header_p, PACK(test_block_size, TAKEN));
+    ptr += test_block_size + 1; // + 1 to move pass header
+
+    assert(FTRP(header_p) == ptr);
+    printf("Test passed.\n\n");
 }
 
 int mm_check()
 {
-
+    test_find_free_list_index();
+    test_ALIGN();
+    test_EVENIZE();
+    test_GET_SIZE();
+    test_GET_STATUS();
+    test_PACK();
+    test_PUT_WORD();
+    test_FTRP();
 }
