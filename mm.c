@@ -615,6 +615,11 @@ static void test_place_block_into_free_list()
     // Case 4: Free list not empty. New block is the biggest block in list
     test_place_block_into_free_list_case_4();
 
+    // Restoring the value in main_free_list so that test doesn't have harmful side effects
+    for (int i = 0; i <= MAX_POWER; i++) {
+        main_free_list[i] = free_list_backup[i];
+    }
+
     printf("Test passed.\n\n");
 }
 
