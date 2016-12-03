@@ -44,6 +44,8 @@ team_t team = {
 #define CHUNK (1<<12) /* extend heap by this amount (bytes) */
 #define STATUS_BIT_SIZE 3 // bits
 #define HDR_FTR_SIZE 2 // in words
+#define HDR_SIZE 1 // in words 
+#define FTR_SIZE 1 // in words 
 
 // Read and write a word at address p 
 #define GET_BYTE(p) (*(char *)(p))
@@ -85,6 +87,12 @@ team_t team = {
 
 #define SET_FREE_LIST_PTR(i, ptr) (main_free_list[i] = ptr)
 
+// Set pred or succ for free blocks 
+#define SET_PTR(p, ptr) (*(char **)(p) = (char *)(ptr))
+
+// Get pointer to the word containing the address of pred and succ for a free block 
+// ptr should point to the start of the header
+#define GET_PTR_PRED_FIELD(ptr) ((char **)(ptr) + HDR_SIZE)
 
 // Global variables
 static char *main_free_list[MAX_POWER + 1];
@@ -94,12 +102,13 @@ static char *heap_ptr;
 static size_t find_free_list_index(size_t words);
 
 static void *extend_heap(size_t words);
-static void test_extend_heap();
 
 static void *coalesce(void *bp);
 static void *find_free_block(size_t words);
 static void alloc_free_block(void *bp, size_t words);
-static void place_block_into_free_list(void *bp);
+static void place_block_into_free_list(char **bp);
+static void remove_block_from_free_list(char **bp);
+
 int mm_check();
 
 
@@ -166,7 +175,7 @@ static void alloc_free_block(void *bp, size_t words) {
 /*
 	Places the block into the free list based on block size.
 */
-static void place_block_into_free_list(void *bp) {
+static void place_block_into_free_list(char **bp) {
 
 }
 
@@ -366,6 +375,36 @@ static void test_MAIN_FREE_LIST_INIT()
     printf("Test passed.\n\n");
 }
 
+// Set pred or succ for free blocks 
+// #define SET_PTR(p, ptr) (*(char **)(p) = (char *)(ptr))
+
+// Get pointer to the word containing the address of pred and succ for a free block 
+// #define GET_PTR_PRED_FIELD(ptr) ((char **)(ptr) + HDR_SIZE)
+static void test_SET_PTR()
+{
+    printf("Test SET_PTR.\n");
+    char *ptr = malloc(sizeof(char *));
+    char **p = malloc(sizeof(char **));
+
+    SET_PTR(p, ptr);
+
+    assert((*p) = ptr);
+    printf("Test passed.\n\n");
+    free(ptr);
+    free(p);
+}
+
+static void test_GET_PTR_PRED_FIELD()
+{
+    printf("Test GET_PTR_PRED_FIELD.\n");
+    char **bp = malloc(2); // enough for hdr + pred field 
+    char **ptr_to_pred_field = bp + HDR_SIZE; // bp should point to the PRED field after this line
+
+    assert(GET_PTR_PRED_FIELD(bp) == ptr_to_pred_field);
+    printf("Test passed.\n\n");
+    free(bp);
+}
+
 int mm_check()
 {
     test_find_free_list_index();
@@ -377,4 +416,6 @@ int mm_check()
     test_PUT_WORD();
     test_FTRP();
     test_MAIN_FREE_LIST_INIT();
+    test_SET_PTR();
+    test_GET_PTR_PRED_FIELD();
 }
