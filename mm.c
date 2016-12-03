@@ -46,6 +46,7 @@ team_t team = {
 #define HDR_FTR_SIZE 2 // in words
 #define HDR_SIZE 1 // in words 
 #define FTR_SIZE 1 // in words 
+#define PRED_FIELD_SIZE 1 // in words
 
 // Read and write a word at address p 
 #define GET_BYTE(p) (*(char *)(p))
@@ -93,6 +94,7 @@ team_t team = {
 // Get pointer to the word containing the address of pred and succ for a free block 
 // ptr should point to the start of the header
 #define GET_PTR_PRED_FIELD(ptr) ((char **)(ptr) + HDR_SIZE)
+#define GET_PTR_SUCC_FIELD(ptr) ((char **)(ptr) + HDR_SIZE + PRED_FIELD_SIZE)
 
 // Global variables
 static char *main_free_list[MAX_POWER + 1];
@@ -405,6 +407,18 @@ static void test_GET_PTR_PRED_FIELD()
     free(bp);
 }
 
+static void test_GET_PTR_SUCC_FIELD()
+{
+    printf("Test GET_PTR_SUCC_FIELD.\n");
+    char **bp = malloc(3); // enough for hdr + pred field + succ field 
+    char **ptr_to_succ_field = bp + HDR_SIZE + PRED_FIELD_SIZE; // bp should point to the succ field after this line
+
+    assert(GET_PTR_SUCC_FIELD(bp) == ptr_to_succ_field);
+    printf("Test passed.\n\n");
+    free(bp);
+}
+
+
 int mm_check()
 {
     test_find_free_list_index();
@@ -418,4 +432,5 @@ int mm_check()
     test_MAIN_FREE_LIST_INIT();
     test_SET_PTR();
     test_GET_PTR_PRED_FIELD();
+    test_GET_PTR_SUCC_FIELD();
 }
