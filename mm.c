@@ -44,11 +44,12 @@ team_t team = {
 #define CHUNK (1<<12) /* extend heap by this amount (bytes) */
 #define STATUS_BIT_SIZE 3 // bits
 #define HDR_FTR_SIZE 2 // in words
-#define HDR_SIZE 1 // in words 
-#define FTR_SIZE 1 // in words 
+#define HDR_SIZE 1 // in words
+#define FTR_SIZE 1 // in words
 #define PRED_FIELD_SIZE 1 // in words
+#define HEAP_PADDING 2 // in words
 
-// Read and write a word at address p 
+// Read and write a word at address p
 #define GET_BYTE(p) (*(char *)(p))
 #define GET_WORD(p) (*(unsigned int *)(p))
 #define PUT_WORD(p, val) (*(char **)(p) = (val))
@@ -68,36 +69,36 @@ team_t team = {
 /* Round up to even */
 #define EVENIZE(x) ((x + 1) & ~1)
 
-// Read the size and allocation bit from address p 
+// Read the size and allocation bit from address p
 #define GET_SIZE(p)  ((GET_WORD(p) & ~GET_MASK(STATUS_BIT_SIZE)) >> STATUS_BIT_SIZE)
 #define GET_STATUS(p) (GET_WORD(p) & 0x1)
 
-// Address of block's footer 
+// Address of block's footer
 // Take in a pointer that points to the header
 #define FTRP(header_p) ((char **)(header_p) + GET_SIZE(header_p) + 1)
 
 // Get total size of a block
-// Size indicates the size of the free space in a block 
+// Size indicates the size of the free space in a block
 // Total size = size + size_of_header + size_of_footer = size + D_WORD_SIZE
 // p must point to a header
 #define GET_TOTAL_SIZE(p) (GET_SIZE(p) + HDR_FTR_SIZE)
 
 // Define this so later when we move to store the list in heap,
-// we can just change this function 
+// we can just change this function
 #define GET_FREE_LIST_PTR(i) (main_free_list[i])
 
 #define SET_FREE_LIST_PTR(i, ptr) (main_free_list[i] = ptr)
 
-// Set pred or succ for free blocks 
+// Set pred or succ for free blocks
 #define SET_PTR(p, ptr) (*(char **)(p) = (char *)(ptr))
 
-// Get pointer to the word containing the address of pred and succ for a free block 
+// Get pointer to the word containing the address of pred and succ for a free block
 // ptr should point to the start of the header
 #define GET_PTR_PRED_FIELD(ptr) ((char **)(ptr) + HDR_SIZE)
 #define GET_PTR_SUCC_FIELD(ptr) ((char **)(ptr) + HDR_SIZE + PRED_FIELD_SIZE)
 
 // Get the pointer that points to the succ of a free block
-// ptr should point to the header of the free block  
+// ptr should point to the header of the free block
 #define GET_SUCC(bp) (*(GET_PTR_SUCC_FIELD(bp)))
 
 // Global variables
@@ -148,12 +149,36 @@ static void *coalesce(void *bp) {
 /*
 	Relies on mem_sbrk to create a new free block.
 	Does not coalesce.
+	Does not place into free list.
 	Returns pointer to the new block of memory with
 	header and footer already defined.
 	Returns NULL if we ran out of physical memory.
 */
 static void *extend_heap(size_t words) {
+	char **bp; // pointer to the free block formed by extending memory
+	char **end_pointer; // pointer to the end of the free block
+	size_t words_extend = EVENIZE(words); // make sure double aligned
+	size_t words_extend_tot = words_extend + HDR_FTR_SIZE; // add header and footer
 
+	// extend memory by so many words
+	// multiply words by WORD because mem_sbrk takes input as bytes
+	if ((long)(bp = mem_sbrk((words_extend_tot) * WORD_SIZE)) == -1) {
+		return NULL;
+	}
+
+	// offset to make use of old padding and add space for new padding
+	bp -= HEAP_PADDING;
+
+	// set new block header/footer to size (in words)
+	PUT_WORD(bp, PACK(words_extend, FREE));
+	PUT_WORD(FTRP(bp), PACK(words_extend, FREE));
+
+	// add padding to the end
+	end_pointer = bp + words_extend_tot;
+	PUT_WORD(end_pointer, PACK(0, TAKEN));
+	PUT_WORD(FTRP(end_pointer), PACK(0, TAKEN));
+
+	return bp;
 }
 
 /*
@@ -232,7 +257,7 @@ static void place_block_into_free_list(char **bp) {
  */
 int mm_init(void)
 {
-    // Initialize the free list 
+    // Initialize the free list
     for (int i = 0; i <= MAX_POWER; i++) {
         main_free_list[i] = NULL;
     }
@@ -310,10 +335,10 @@ static void test_find_free_list_index()
 
     int index_11 = find_free_list_index(2048);
     assert(index_11 == 11);
-    
+
     int index_20 = find_free_list_index(1048600);
     assert(index_20 == 20);
-    
+
     printf("Test passed.\n\n");
 }
 
@@ -373,7 +398,7 @@ static void test_PACK()
     int size_8_free = PACK(8, FREE);
     assert(GET_SIZE(&size_8_free) == 8);
     assert(GET_STATUS(&size_8_free) == FREE);
-    
+
     int size_9_taken = PACK(9, TAKEN);
     assert(GET_SIZE(&size_9_taken) == 9);
     assert(GET_STATUS(&size_9_taken) == TAKEN);
@@ -382,7 +407,7 @@ static void test_PACK()
 }
 
 static void test_PUT_WORD()
-{   
+{
     printf("Test PUT_WORD.\n");
     char ** p = malloc(WORD_SIZE);
     int test_value_1 = 0;
@@ -441,7 +466,7 @@ static void test_SET_PTR()
 static void test_GET_PTR_PRED_FIELD()
 {
     printf("Test GET_PTR_PRED_FIELD.\n");
-    char **bp = malloc(2); // enough for hdr + pred field 
+    char **bp = malloc(2); // enough for hdr + pred field
     char **ptr_to_pred_field = bp + HDR_SIZE; // bp should point to the PRED field after this line
 
     assert(GET_PTR_PRED_FIELD(bp) == ptr_to_pred_field);
@@ -452,7 +477,7 @@ static void test_GET_PTR_PRED_FIELD()
 static void test_GET_PTR_SUCC_FIELD()
 {
     printf("Test GET_PTR_SUCC_FIELD.\n");
-    char **bp = malloc(3); // enough for hdr + pred field + succ field 
+    char **bp = malloc(3); // enough for hdr + pred field + succ field
     char **ptr_to_succ_field = bp + HDR_SIZE + PRED_FIELD_SIZE; // bp should point to the succ field after this line
 
     assert(GET_PTR_SUCC_FIELD(bp) == ptr_to_succ_field);
@@ -464,7 +489,7 @@ static void test_GET_PTR_SUCC_FIELD()
 static void test_GET_SUCC()
 {
     printf("Test test_GET_SUCC.\n");
-    char **bp = malloc(3); // enough for hdr + pred field + succ field 
+    char **bp = malloc(3); // enough for hdr + pred field + succ field
     char **ptr_to_succ_field = bp + HDR_SIZE + PRED_FIELD_SIZE; // bp should point to the succ field after this line
 
     assert(GET_SUCC(bp) == (*ptr_to_succ_field));
@@ -473,7 +498,7 @@ static void test_GET_SUCC()
 }
 
 // Initialize main_free_list to all NULL
-// Insert 3 block of size 60, 52, 40 into the free list 
+// Insert 3 block of size 60, 52, 40 into the free list
 static void test_place_block_into_free_list_helper()
 {
     for (int i = 0; i <= MAX_POWER; i++) {
@@ -508,7 +533,7 @@ static void test_place_block_into_free_list_case_2()
 {
     test_place_block_into_free_list_helper();
 
-    // New block 
+    // New block
     int new_b_size = 35;
     char **new_block = malloc((new_b_size+HDR_FTR_SIZE)*WORD_SIZE);
     PUT_WORD(new_block, PACK(new_b_size, FREE));
@@ -521,7 +546,7 @@ static void test_place_block_into_free_list_case_2()
     while (GET_SUCC(end_of_list) != NULL) {
         end_of_list = GET_SUCC(end_of_list);
     }
-    
+
     place_block_into_free_list(new_block);
 
     assert(GET_SUCC(end_of_list) == new_block);
@@ -534,7 +559,7 @@ static void test_place_block_into_free_list_case_3()
 {
     test_place_block_into_free_list_helper();
 
-    // New block 
+    // New block
     int new_b_size = 50;
     char **new_block = malloc((new_b_size+HDR_FTR_SIZE)*WORD_SIZE);
     PUT_WORD(new_block, PACK(new_b_size, FREE));
@@ -563,7 +588,7 @@ static void test_place_block_into_free_list_case_4()
 {
     test_place_block_into_free_list_helper();
 
-    // New Block 
+    // New Block
     int new_b_size = 60;
     char **new_block = malloc((new_b_size+HDR_FTR_SIZE)*WORD_SIZE);
     PUT_WORD(new_block, PACK(new_b_size, FREE));
@@ -589,7 +614,7 @@ static void test_place_block_into_free_list()
         free_list_backup[i] = main_free_list[i];
     }
 
-    // Case 1: Free list currently empty 
+    // Case 1: Free list currently empty
     for (int i = 0; i <= MAX_POWER; i++) {
         main_free_list[i] = NULL;
     }
@@ -603,7 +628,7 @@ static void test_place_block_into_free_list()
 
     int list = find_free_list_index(GET_SIZE(bp));
     assert(main_free_list[list] == bp);
-    assert(GET_SUCC(bp) == NULL); 
+    assert(GET_SUCC(bp) == NULL);
     free(bp);
 
     // Case 2: Free list not empty. New block is the smallest block in list.
@@ -623,6 +648,40 @@ static void test_place_block_into_free_list()
     printf("Test passed.\n\n");
 }
 
+static void test_extend_heap() {
+	printf("Test extend_heap.\n");
+
+	char **test_heap_ptr;
+	char **initial_padding_location;
+	char **initial_heap_end;
+	char **new_padding_location;
+	size_t initial_heap_size = 8; // words
+	size_t new_block_size = 50; // words
+
+	// create initial heap and padding taken space at the end
+	test_heap_ptr = mem_sbrk((initial_heap_size) * WORD_SIZE);
+	initial_padding_location = test_heap_ptr + initial_heap_size - HEAP_PADDING;
+	initial_heap_end = test_heap_ptr + initial_heap_size;
+	new_padding_location = initial_heap_end + new_block_size + HDR_FTR_SIZE - HEAP_PADDING;
+	PUT_WORD(initial_padding_location, PACK(0, TAKEN));
+	PUT_WORD(initial_padding_location + HDR_SIZE, PACK(0, TAKEN));
+
+	extend_heap(50);
+
+	// check that block was created and placed to start where old heap padding was
+	assert(GET_SIZE(initial_padding_location) == new_block_size);
+	assert(GET_STATUS(initial_padding_location) == FREE);
+	assert(GET_SIZE(FTRP(initial_padding_location)) == new_block_size);
+	assert(GET_STATUS(FTRP(initial_padding_location)) == FREE);
+
+	// check that extra padding was created at the end of the new heap space
+	assert(GET_SIZE(new_padding_location) == 0);
+	assert(GET_STATUS(new_padding_location) == TAKEN);
+	assert(GET_SIZE(FTRP(new_padding_location)) == 0);
+	assert(GET_STATUS(FTRP(new_padding_location)) == TAKEN);
+
+	printf("Test passed.\n\n");
+}
 
 int mm_check()
 {
@@ -640,4 +699,5 @@ int mm_check()
     test_GET_PTR_SUCC_FIELD();
     test_GET_SUCC();
     test_place_block_into_free_list();
+		test_extend_heap();
 }
