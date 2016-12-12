@@ -44,11 +44,11 @@ team_t team = {
 #define CHUNK (1<<12) /* extend heap by this amount (bytes) */
 #define STATUS_BIT_SIZE 3 // bits
 #define HDR_FTR_SIZE 2 // in words
-#define HDR_SIZE 1 // in words 
-#define FTR_SIZE 1 // in words 
+#define HDR_SIZE 1 // in words
+#define FTR_SIZE 1 // in words
 #define PRED_FIELD_SIZE 1 // in words
 
-// Read and write a word at address p 
+// Read and write a word at address p
 #define GET_BYTE(p) (*(char *)(p))
 #define GET_WORD(p) (*(unsigned int *)(p))
 #define PUT_WORD(p, val) (*(char **)(p) = (val))
@@ -68,36 +68,37 @@ team_t team = {
 /* Round up to even */
 #define EVENIZE(x) ((x + 1) & ~1)
 
-// Read the size and allocation bit from address p 
+// Read the size and allocation bit from address p
 #define GET_SIZE(p)  ((GET_WORD(p) & ~GET_MASK(STATUS_BIT_SIZE)) >> STATUS_BIT_SIZE)
 #define GET_STATUS(p) (GET_WORD(p) & 0x1)
 
-// Address of block's footer 
+// Address of block's footer
 // Take in a pointer that points to the header
 #define FTRP(header_p) ((char **)(header_p) + GET_SIZE(header_p) + 1)
 
 // Get total size of a block
-// Size indicates the size of the free space in a block 
+// Size indicates the size of the free space in a block
 // Total size = size + size_of_header + size_of_footer = size + D_WORD_SIZE
 // p must point to a header
 #define GET_TOTAL_SIZE(p) (GET_SIZE(p) + HDR_FTR_SIZE)
 
 // Define this so later when we move to store the list in heap,
-// we can just change this function 
+// we can just change this function
 #define GET_FREE_LIST_PTR(i) (main_free_list[i])
 
 #define SET_FREE_LIST_PTR(i, ptr) (main_free_list[i] = ptr)
 
-// Set pred or succ for free blocks 
+// Set pred or succ for free blocks
 #define SET_PTR(p, ptr) (*(char **)(p) = (char *)(ptr))
 
-// Get pointer to the word containing the address of pred and succ for a free block 
+// Get pointer to the word containing the address of pred and succ for a free block
 // ptr should point to the start of the header
 #define GET_PTR_PRED_FIELD(ptr) ((char **)(ptr) + HDR_SIZE)
 #define GET_PTR_SUCC_FIELD(ptr) ((char **)(ptr) + HDR_SIZE + PRED_FIELD_SIZE)
 
 // Get the pointer that points to the succ of a free block
-// ptr should point to the header of the free block  
+// ptr should point to the header of the free block
+#define GET_PRED(bp) (*(GET_PTR_PRED_FIELD(bp)))
 #define GET_SUCC(bp) (*(GET_PTR_SUCC_FIELD(bp)))
 
 // Global variables
@@ -161,7 +162,6 @@ static void *extend_heap(size_t words) {
 	enough to hold the amount of words specified.
 	Returns the pointer to that block.
 	Does not take the block out of the free list.
-	Returns the pointer to the block.
 	Returns NULL if block large enough is not found.
 */
 static void *find_free_block(size_t words) {
@@ -179,6 +179,37 @@ static void alloc_free_block(void *bp, size_t words) {
 }
 
 /*
+	Removes a block from the free list.
+	Assumes the block is in the free list beforehand.
+	Does not return the pointer to that block.
+*/
+static void remove_block_from_free_list(char **bp) {
+	char **prev_block = GET_PRED(bp);
+	char **next_block = GET_SUCC(bp);
+	char **nearby_block;
+	int index;
+
+	// if largest block in free list set free list to next ptr
+	if (prev_block == NULL) {
+		index = find_free_list_index(GET_SIZE(bp));
+		main_free_list[index] = next_block;
+	} else { // if not largest block update pointer for prev block to next ptr
+		nearby_block = prev_block;
+		SET_PTR(GET_PTR_SUCC_FIELD(nearby_block), next_block);
+	}
+
+	// next_block is not NULL, update the block to point to prev block
+	if (next_block != NULL) {
+		nearby_block = next_block;
+		SET_PTR(GET_PTR_PRED_FIELD(nearby_block), prev_block);
+	}
+
+	// clear current block's pointers
+	SET_PTR(GET_PTR_PRED_FIELD(bp), NULL);
+	SET_PTR(GET_PTR_SUCC_FIELD(bp), NULL);
+}
+
+/*
 	Places the block into the free list based on block size.
 */
 static void place_block_into_free_list(char **bp) {
@@ -192,6 +223,7 @@ static void place_block_into_free_list(char **bp) {
     if (front_ptr == NULL)
     {
         SET_PTR(GET_PTR_SUCC_FIELD(bp), NULL);
+				SET_PTR(GET_PTR_PRED_FIELD(bp), NULL);
         main_free_list[index] = bp;
         return;
     }
@@ -201,6 +233,7 @@ static void place_block_into_free_list(char **bp) {
     {
         main_free_list[index] = bp;
         SET_PTR(GET_PTR_SUCC_FIELD(bp), front_ptr);
+				SET_PTR(GET_PTR_PRED_FIELD(bp), NULL);
         return;
     }
 
@@ -215,13 +248,16 @@ static void place_block_into_free_list(char **bp) {
     if (front_ptr == NULL)
     {
         SET_PTR(GET_PTR_SUCC_FIELD(back_ptr), bp);
+				SET_PTR(GET_PTR_PRED_FIELD(bp), back_ptr);
         SET_PTR(GET_PTR_SUCC_FIELD(bp), NULL);
         return;
     }
     else
     { // Haven't reached the end of the free list
         SET_PTR(GET_PTR_SUCC_FIELD(back_ptr), bp);
+				SET_PTR(GET_PTR_PRED_FIELD(bp), back_ptr);
         SET_PTR(GET_PTR_SUCC_FIELD(bp), front_ptr);
+				SET_PTR(GET_PTR_PRED_FIELD(front_ptr), bp);
         return;
     }
 
@@ -232,7 +268,7 @@ static void place_block_into_free_list(char **bp) {
  */
 int mm_init(void)
 {
-    // Initialize the free list 
+    // Initialize the free list
     for (int i = 0; i <= MAX_POWER; i++) {
         main_free_list[i] = NULL;
     }
@@ -310,10 +346,10 @@ static void test_find_free_list_index()
 
     int index_11 = find_free_list_index(2048);
     assert(index_11 == 11);
-    
+
     int index_20 = find_free_list_index(1048600);
     assert(index_20 == 20);
-    
+
     printf("Test passed.\n\n");
 }
 
@@ -373,7 +409,7 @@ static void test_PACK()
     int size_8_free = PACK(8, FREE);
     assert(GET_SIZE(&size_8_free) == 8);
     assert(GET_STATUS(&size_8_free) == FREE);
-    
+
     int size_9_taken = PACK(9, TAKEN);
     assert(GET_SIZE(&size_9_taken) == 9);
     assert(GET_STATUS(&size_9_taken) == TAKEN);
@@ -382,7 +418,7 @@ static void test_PACK()
 }
 
 static void test_PUT_WORD()
-{   
+{
     printf("Test PUT_WORD.\n");
     char ** p = malloc(WORD_SIZE);
     int test_value_1 = 0;
@@ -441,7 +477,7 @@ static void test_SET_PTR()
 static void test_GET_PTR_PRED_FIELD()
 {
     printf("Test GET_PTR_PRED_FIELD.\n");
-    char **bp = malloc(2); // enough for hdr + pred field 
+    char **bp = malloc(2); // enough for hdr + pred field
     char **ptr_to_pred_field = bp + HDR_SIZE; // bp should point to the PRED field after this line
 
     assert(GET_PTR_PRED_FIELD(bp) == ptr_to_pred_field);
@@ -452,7 +488,7 @@ static void test_GET_PTR_PRED_FIELD()
 static void test_GET_PTR_SUCC_FIELD()
 {
     printf("Test GET_PTR_SUCC_FIELD.\n");
-    char **bp = malloc(3); // enough for hdr + pred field + succ field 
+    char **bp = malloc(3); // enough for hdr + pred field + succ field
     char **ptr_to_succ_field = bp + HDR_SIZE + PRED_FIELD_SIZE; // bp should point to the succ field after this line
 
     assert(GET_PTR_SUCC_FIELD(bp) == ptr_to_succ_field);
@@ -464,7 +500,7 @@ static void test_GET_PTR_SUCC_FIELD()
 static void test_GET_SUCC()
 {
     printf("Test test_GET_SUCC.\n");
-    char **bp = malloc(3); // enough for hdr + pred field + succ field 
+    char **bp = malloc(3); // enough for hdr + pred field + succ field
     char **ptr_to_succ_field = bp + HDR_SIZE + PRED_FIELD_SIZE; // bp should point to the succ field after this line
 
     assert(GET_SUCC(bp) == (*ptr_to_succ_field));
@@ -472,8 +508,19 @@ static void test_GET_SUCC()
     free(bp);
 }
 
+static void test_GET_PRED()
+{
+    printf("Test test_GET_PRED.\n");
+    char **bp = malloc(2*WORD_SIZE); // enough for hdr + pred field
+    char **ptr_to_pred_field = bp + HDR_SIZE; // bp should point to the pred field after this line
+
+    assert(GET_PRED(bp) == (*ptr_to_pred_field));
+    printf("Test passed.\n\n");
+    free(bp);
+}
+
 // Initialize main_free_list to all NULL
-// Insert 3 block of size 60, 52, 40 into the free list 
+// Insert 3 block of size 60, 52, 40 into the free list
 static void test_place_block_into_free_list_helper()
 {
     for (int i = 0; i <= MAX_POWER; i++) {
@@ -490,16 +537,19 @@ static void test_place_block_into_free_list_helper()
     PUT_WORD(block_1, PACK(block_1_size, FREE));
     PUT_WORD(FTRP(block_1), PACK(block_1_size, FREE));
     main_free_list[index] = block_1;
+		SET_PTR(GET_PTR_PRED_FIELD(block_1), NULL);
 
     char **block_2 = malloc((block_2_size+HDR_FTR_SIZE)*WORD_SIZE);
     PUT_WORD(block_2, PACK(block_2_size, FREE));
     PUT_WORD(FTRP(block_2), PACK(block_2_size, FREE));
     SET_PTR(GET_PTR_SUCC_FIELD(block_1), block_2);
+		SET_PTR(GET_PTR_PRED_FIELD(block_2), block_1);
 
     char **block_3 = malloc((block_3_size+HDR_FTR_SIZE)*WORD_SIZE);
     PUT_WORD(block_3, PACK(block_3_size, FREE));
     PUT_WORD(FTRP(block_3), PACK(block_3_size, FREE));
     SET_PTR(GET_PTR_SUCC_FIELD(block_2), block_3);
+		SET_PTR(GET_PTR_PRED_FIELD(block_3), block_2);
     SET_PTR(GET_PTR_SUCC_FIELD(block_3), NULL);
 }
 
@@ -508,7 +558,7 @@ static void test_place_block_into_free_list_case_2()
 {
     test_place_block_into_free_list_helper();
 
-    // New block 
+    // New block
     int new_b_size = 35;
     char **new_block = malloc((new_b_size+HDR_FTR_SIZE)*WORD_SIZE);
     PUT_WORD(new_block, PACK(new_b_size, FREE));
@@ -521,10 +571,11 @@ static void test_place_block_into_free_list_case_2()
     while (GET_SUCC(end_of_list) != NULL) {
         end_of_list = GET_SUCC(end_of_list);
     }
-    
+
     place_block_into_free_list(new_block);
 
     assert(GET_SUCC(end_of_list) == new_block);
+		assert(GET_PRED(new_block) == end_of_list);
     assert(GET_SUCC(new_block) == NULL);
     free(new_block);
 }
@@ -534,7 +585,7 @@ static void test_place_block_into_free_list_case_3()
 {
     test_place_block_into_free_list_helper();
 
-    // New block 
+    // New block
     int new_b_size = 50;
     char **new_block = malloc((new_b_size+HDR_FTR_SIZE)*WORD_SIZE);
     PUT_WORD(new_block, PACK(new_b_size, FREE));
@@ -553,7 +604,9 @@ static void test_place_block_into_free_list_case_3()
     place_block_into_free_list(new_block);
 
     assert(GET_SUCC(back_ptr) == new_block);
+		assert(GET_PRED(new_block) == back_ptr);
     assert(GET_SUCC(new_block) == front_ptr);
+		assert(GET_PRED(front_ptr) == new_block);
     free(new_block);
 }
 
@@ -563,7 +616,7 @@ static void test_place_block_into_free_list_case_4()
 {
     test_place_block_into_free_list_helper();
 
-    // New Block 
+    // New Block
     int new_b_size = 60;
     char **new_block = malloc((new_b_size+HDR_FTR_SIZE)*WORD_SIZE);
     PUT_WORD(new_block, PACK(new_b_size, FREE));
@@ -576,6 +629,7 @@ static void test_place_block_into_free_list_case_4()
 
     assert(main_free_list[index] == new_block);
     assert(GET_SUCC(new_block) == previous_biggest);
+		assert(GET_PRED(new_block) == NULL);
     free(new_block);
 }
 
@@ -589,7 +643,7 @@ static void test_place_block_into_free_list()
         free_list_backup[i] = main_free_list[i];
     }
 
-    // Case 1: Free list currently empty 
+    // Case 1: Free list currently empty
     for (int i = 0; i <= MAX_POWER; i++) {
         main_free_list[i] = NULL;
     }
@@ -603,7 +657,8 @@ static void test_place_block_into_free_list()
 
     int list = find_free_list_index(GET_SIZE(bp));
     assert(main_free_list[list] == bp);
-    assert(GET_SUCC(bp) == NULL); 
+    assert(GET_SUCC(bp) == NULL);
+		assert(GET_PRED(bp) == NULL);
     free(bp);
 
     // Case 2: Free list not empty. New block is the smallest block in list.
@@ -623,6 +678,52 @@ static void test_place_block_into_free_list()
     printf("Test passed.\n\n");
 }
 
+static void test_remove_block_from_free_list() {
+	printf("Test remove_block_from_free_list.\n");
+
+	char *free_list_backup[MAX_POWER + 1]; // backing up main_free_list to restore after test
+	for (int i = 0; i <= MAX_POWER; i++) {
+			free_list_backup[i] = main_free_list[i];
+	}
+
+	test_place_block_into_free_list_helper();
+
+	int index = find_free_list_index(60); // arbitrary size to get index
+	char **first_block = main_free_list[index];
+	char **second_block = GET_SUCC(first_block);
+	char **third_block = GET_SUCC(second_block);
+
+	// Case 1: remove a block from between two other blocks
+	remove_block_from_free_list(second_block);
+
+	assert(GET_SUCC(first_block) == third_block);
+	assert(GET_PRED(third_block) == first_block);
+	assert(GET_SUCC(second_block) == NULL);
+	assert(GET_PRED(second_block) == NULL);
+
+	// Case 2: remove block from the beginning of the free list
+	remove_block_from_free_list(first_block);
+
+	assert(main_free_list[index] == third_block);
+	assert(GET_PRED(third_block) == NULL);
+	assert(GET_SUCC(first_block) == NULL);
+	assert(GET_PRED(first_block) == NULL);
+
+	// Case 3: remove last block
+	remove_block_from_free_list(third_block);
+
+	assert(main_free_list[index] == NULL);
+	assert(GET_SUCC(third_block) == NULL);
+	assert(GET_PRED(third_block) == NULL);
+
+	// Restoring the value in main_free_list so that test doesn't have harmful side effects
+	for (int i = 0; i <= MAX_POWER; i++) {
+			main_free_list[i] = free_list_backup[i];
+	}
+
+	printf("Test passed.\n\n");
+}
+
 
 int mm_check()
 {
@@ -639,5 +740,7 @@ int mm_check()
     test_GET_PTR_PRED_FIELD();
     test_GET_PTR_SUCC_FIELD();
     test_GET_SUCC();
+		test_GET_PRED();
     test_place_block_into_free_list();
+		test_remove_block_from_free_list();
 }
