@@ -47,7 +47,7 @@ team_t team = {
 #define HDR_SIZE 1 // in words
 #define FTR_SIZE 1 // in words
 #define PRED_FIELD_SIZE 1 // in words
-#define HEAP_PADDING 2 // in words
+#define HEAP_EPILOG 2 // in words
 
 // Read and write a word at address p
 #define GET_BYTE(p) (*(char *)(p))
@@ -161,19 +161,19 @@ static void *extend_heap(size_t words) {
 	size_t words_extend_tot = words_extend + HDR_FTR_SIZE; // add header and footer
 
 	// extend memory by so many words
-	// multiply words by WORD because mem_sbrk takes input as bytes
+	// multiply words by WORD_SIZE because mem_sbrk takes input as bytes
 	if ((long)(bp = mem_sbrk((words_extend_tot) * WORD_SIZE)) == -1) {
 		return NULL;
 	}
 
-	// offset to make use of old padding and add space for new padding
-	bp -= HEAP_PADDING;
+	// offset to make use of old epilog and add space for new epilog
+	bp -= HEAP_EPILOG;
 
 	// set new block header/footer to size (in words)
 	PUT_WORD(bp, PACK(words_extend, FREE));
 	PUT_WORD(FTRP(bp), PACK(words_extend, FREE));
 
-	// add padding to the end
+	// add epilog to the end
 	end_pointer = bp + words_extend_tot;
 	PUT_WORD(end_pointer, PACK(0, TAKEN));
 	PUT_WORD(FTRP(end_pointer), PACK(0, TAKEN));
@@ -652,33 +652,33 @@ static void test_extend_heap() {
 	printf("Test extend_heap.\n");
 
 	char **test_heap_ptr;
-	char **initial_padding_location;
+	char **initial_epilog_location;
 	char **initial_heap_end;
-	char **new_padding_location;
+	char **new_epilog_location;
 	size_t initial_heap_size = 8; // words
 	size_t new_block_size = 50; // words
 
-	// create initial heap and padding taken space at the end
+	// create initial heap and epilog taken space at the end
 	test_heap_ptr = mem_sbrk((initial_heap_size) * WORD_SIZE);
-	initial_padding_location = test_heap_ptr + initial_heap_size - HEAP_PADDING;
+	initial_epilog_location = test_heap_ptr + initial_heap_size - HEAP_EPILOG;
 	initial_heap_end = test_heap_ptr + initial_heap_size;
-	new_padding_location = initial_heap_end + new_block_size + HDR_FTR_SIZE - HEAP_PADDING;
-	PUT_WORD(initial_padding_location, PACK(0, TAKEN));
-	PUT_WORD(initial_padding_location + HDR_SIZE, PACK(0, TAKEN));
+	new_epilog_location = initial_heap_end + new_block_size + HDR_FTR_SIZE - HEAP_EPILOG;
+	PUT_WORD(initial_epilog_location, PACK(0, TAKEN));
+	PUT_WORD(initial_epilog_location + HDR_SIZE, PACK(0, TAKEN));
 
 	extend_heap(50);
 
-	// check that block was created and placed to start where old heap padding was
-	assert(GET_SIZE(initial_padding_location) == new_block_size);
-	assert(GET_STATUS(initial_padding_location) == FREE);
-	assert(GET_SIZE(FTRP(initial_padding_location)) == new_block_size);
-	assert(GET_STATUS(FTRP(initial_padding_location)) == FREE);
+	// check that block was created and placed to start where old heap epilog was
+	assert(GET_SIZE(initial_epilog_location) == new_block_size);
+	assert(GET_STATUS(initial_epilog_location) == FREE);
+	assert(GET_SIZE(FTRP(initial_epilog_location)) == new_block_size);
+	assert(GET_STATUS(FTRP(initial_epilog_location)) == FREE);
 
-	// check that extra padding was created at the end of the new heap space
-	assert(GET_SIZE(new_padding_location) == 0);
-	assert(GET_STATUS(new_padding_location) == TAKEN);
-	assert(GET_SIZE(FTRP(new_padding_location)) == 0);
-	assert(GET_STATUS(FTRP(new_padding_location)) == TAKEN);
+	// check that extra epilog was created at the end of the new heap space
+	assert(GET_SIZE(new_epilog_location) == 0);
+	assert(GET_STATUS(new_epilog_location) == TAKEN);
+	assert(GET_SIZE(FTRP(new_epilog_location)) == 0);
+	assert(GET_STATUS(FTRP(new_epilog_location)) == TAKEN);
 
 	printf("Test passed.\n\n");
 }
