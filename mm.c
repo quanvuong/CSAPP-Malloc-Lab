@@ -47,7 +47,7 @@ team_t team = {
 #define HDR_SIZE 1 // in words
 #define FTR_SIZE 1 // in words
 #define PRED_FIELD_SIZE 1 // in words
-#define HEAP_EPILOG 2 // in words
+#define EPILOG_SIZE 2 // in words
 
 // Read and write a word at address p
 #define GET_BYTE(p) (*(char *)(p))
@@ -167,7 +167,7 @@ static void *extend_heap(size_t words) {
 	}
 
 	// offset to make use of old epilog and add space for new epilog
-	bp -= HEAP_EPILOG;
+	bp -= EPILOG_SIZE;
 
 	// set new block header/footer to size (in words)
 	PUT_WORD(bp, PACK(words_extend, FREE));
@@ -660,9 +660,9 @@ static void test_extend_heap() {
 
 	// create initial heap and epilog taken space at the end
 	test_heap_ptr = mem_sbrk((initial_heap_size) * WORD_SIZE);
-	initial_epilog_location = test_heap_ptr + initial_heap_size - HEAP_EPILOG;
+	initial_epilog_location = test_heap_ptr + initial_heap_size - EPILOG_SIZE;
 	initial_heap_end = test_heap_ptr + initial_heap_size;
-	new_epilog_location = initial_heap_end + new_block_size + HDR_FTR_SIZE - HEAP_EPILOG;
+	new_epilog_location = initial_heap_end + new_block_size + HDR_FTR_SIZE - EPILOG_SIZE;
 	PUT_WORD(initial_epilog_location, PACK(0, TAKEN));
 	PUT_WORD(initial_epilog_location + HDR_SIZE, PACK(0, TAKEN));
 
