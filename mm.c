@@ -433,13 +433,13 @@ int mm_init(void)
         return -1;
 
     PUT_WORD(heap_ptr, PACK(0, TAKEN)); // Prolog header
-    PUT_WORD(FTRP(heap_ptr), PACK(0, TAKEN)); // Prolog footer 
+    PUT_WORD(FTRP(heap_ptr), PACK(0, TAKEN)); // Prolog footer
 
-	char ** epilog = NEXT_BLOCK_IN_HEAP(heap_ptr);
-    PUT_WORD(epilog, PACK(0, TAKEN)); // Epilog header 
+		char ** epilog = NEXT_BLOCK_IN_HEAP(heap_ptr);
+    PUT_WORD(epilog, PACK(0, TAKEN)); // Epilog header
     PUT_WORD(FTRP(epilog), PACK(0, TAKEN)); // Epilog footer
 
-	heap_ptr += HDR_FTR_SIZE; // Move past prolog  
+		heap_ptr += HDR_FTR_SIZE; // Move past prolog
 
     if (extend_heap(CHUNK) == NULL)
         return -1;
