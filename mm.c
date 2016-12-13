@@ -103,7 +103,7 @@ team_t team = {
 #define GET_SUCC(bp) (*(GET_PTR_SUCC_FIELD(bp)))
 
 // Given pointer to current block, return pointer to header of previous block
-#define PREV_BLOCK_IN_HEAP(header_p) ((char **)(header_p) - GET_TOTAL_SIZE((char **)(header_p) - HDR_SIZE))
+#define PREV_BLOCK_IN_HEAP(header_p) ((char **)(header_p) - GET_TOTAL_SIZE((char **)(header_p) - FTR_SIZE))
 
 // Given pointer to current block, return pointer to header of next block
 #define NEXT_BLOCK_IN_HEAP(header_p) (FTRP(header_p) + FTR_SIZE)
