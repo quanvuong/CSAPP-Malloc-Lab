@@ -186,11 +186,50 @@ static void *extend_heap(size_t words) {
 	enough to hold the amount of words specified.
 	Returns the pointer to that block.
 	Does not take the block out of the free list.
+	Does not extend heap.
 	Returns the pointer to the block.
 	Returns NULL if block large enough is not found.
 */
 static void *find_free_block(size_t words) {
+	char **bp;
+	size_t index = find_free_list_index(words);
 
+	// check if first free list can contain large enough block
+	if ((bp = GET_FREE_LIST_PTR(index)) != NULL && GET_SIZE(bp) >= words) {
+		// iterate through blocks
+		while(1) {
+			// if block is of exact size, return right away
+			if (GET_SIZE(bp) == words) {
+				return bp;
+			}
+
+			// if next block is not possible, return current one
+			if (GET_SUCC(bp) == NULL || GET_SIZE(GET_SUCC(bp)) < words) {
+				return bp;
+			} else {
+				bp = GET_SUCC(bp);
+			}
+		}
+	}
+
+	// move on from current free list
+	index++;
+
+	// find a large enough non-empty free list
+	while (GET_FREE_LIST_PTR(index) == NULL && index <= MAX_POWER) {
+		index++;
+	}
+
+	// if there is a non-NULL free list, go until the smallest block in free list
+	if ((bp = GET_FREE_LIST_PTR(index)) != NULL) {
+		while (GET_SUCC(bp) != NULL) {
+			bp = GET_SUCC(bp);
+		}
+
+		return bp;
+	} else { // if no large enough free list available, return NULL
+		return NULL;
+	}
 }
 
 /*
@@ -680,6 +719,61 @@ static void test_extend_heap() {
 	assert(GET_SIZE(FTRP(new_epilog_location)) == 0);
 	assert(GET_STATUS(FTRP(new_epilog_location)) == TAKEN);
 
+  printf("Test passed.\n\n");
+}
+
+static void test_find_free_block() {
+	printf("Test find_free_block.\n");
+
+	char *free_list_backup[MAX_POWER + 1]; // backing up main_free_list to restore after test
+	for (int i = 0; i <= MAX_POWER; i++) {
+		free_list_backup[i] = GET_FREE_LIST_PTR(i);
+	}
+
+	char **bp;
+
+	test_place_block_into_free_list_helper();
+
+	// Case 1: find by size that is smaller than index
+	bp = find_free_block(2);
+	assert(GET_SIZE(bp) == 40);
+	printf("Case 1 passed.\n");
+
+	// Case 2: find by size that matches smallest block in index
+	bp = find_free_block(33);
+	assert(GET_SIZE(bp) == 40);
+	printf("Case 2 passed.\n");
+
+	// Case 3: find by size so that middle block in index is found
+	bp = find_free_block(42);
+	assert(GET_SIZE(bp) == 53);
+	printf("Case 3 passed.\n");
+
+	// Case 4: find by size so that largest block in index is used
+	bp = find_free_block(59);
+	assert(GET_SIZE(bp) == 60);
+	printf("Case 4 passed.\n");
+
+	// Case 5: find by size that is too big for current index and other indices
+	bp = find_free_block(63);
+	assert(bp == NULL);
+	printf("Case 5 passed.\n");
+
+	// Case 6: find by size that is too big from the start
+	bp = find_free_block(120);
+	assert(bp == NULL);
+	printf("Case 6 passed.\n");
+
+	// Case 7: find by exact size
+	bp = find_free_block(53);
+	assert(GET_SIZE(bp) == 53);
+	printf("Case 7 passed.\n");
+
+	// Restoring the value in main_free_list so that test doesn't have harmful side effects
+	for (int i = 0; i <= MAX_POWER; i++) {
+		SET_FREE_LIST_PTR(i, free_list_backup[i]);
+	}
+
 	printf("Test passed.\n\n");
 }
 
@@ -699,7 +793,7 @@ int mm_check()
     test_GET_PTR_SUCC_FIELD();
     test_GET_SUCC();
     test_place_block_into_free_list();
-
+    test_find_free_block();
 
 
 		// test this last
