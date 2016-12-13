@@ -169,14 +169,22 @@ static void *find_free_block(size_t words) {
 	char **bp;
 	size_t index = find_free_list_index(words);
 
-	// check if the current index has any blocks big enough
+	// check if first free list can contain large enough block
 	if ((bp = GET_FREE_LIST_PTR(index)) != NULL && GET_SIZE(bp) >= words) {
-		// iterate until smallest element in this index
-		while (GET_SUCC(bp) != NULL && GET_SIZE(GET_SUCC(bp)) >= words) {
-			bp = GET_SUCC(bp);
-		}
+		// iterate through blocks
+		while(1) {
+			// if block is of exact size, return right away
+			if (GET_SIZE(bp) == words) {
+				return bp;
+			}
 
-		return bp;
+			// if next block is not possible, return current one
+			if (GET_SUCC(bp) == NULL || GET_SIZE(GET_SUCC(bp)) < words) {
+				return bp;
+			} else {
+				bp = GET_SUCC(bp);
+			}
+		}
 	}
 
 	// move on from current free list
@@ -695,6 +703,11 @@ static void test_find_free_block() {
 	bp = find_free_block(120);
 	assert(bp == NULL);
 	printf("Case 6 passed.\n");
+
+	// Case 7: find by exact size
+	bp = find_free_block(53);
+	assert(GET_SIZE(bp) == 53);
+	printf("Case 7 passed.\n");
 
 	// Restoring the value in main_free_list so that test doesn't have harmful side effects
 	for (int i = 0; i <= MAX_POWER; i++) {
