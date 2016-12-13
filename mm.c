@@ -699,5 +699,9 @@ int mm_check()
     test_GET_PTR_SUCC_FIELD();
     test_GET_SUCC();
     test_place_block_into_free_list();
+
+
+
+		// test this last
 		test_extend_heap();
 }
