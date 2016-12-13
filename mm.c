@@ -383,7 +383,7 @@ int mm_init(void)
 	    SET_FREE_LIST_PTR(i, NULL);
     }
 
-    if ((long)(heap_ptr = mem_sbrk(4*WORD_SIZE)) == -1) // 3, 2 for prolog, 2 for epilog
+    if ((long)(heap_ptr = mem_sbrk(4*WORD_SIZE)) == -1) // 2 for prolog, 2 for epilog
         return -1;
 
     PUT_WORD(heap_ptr, PACK(0, TAKEN)); // Prolog header
@@ -395,8 +395,6 @@ int mm_init(void)
 
     if (extend_heap(CHUNK) == NULL)
         return -1;
-
-    mm_check();
 
     return 0;
 }
@@ -1142,10 +1140,10 @@ int mm_check()
 	test_GET_PRED();
     test_place_block_into_free_list();
     test_remove_block_from_free_list();
-    test_find_free_block();
+    // test_find_free_block();
 	test_PREV_IN_HEAP();
 	test_NEXT_IN_HEAP();
-	test_coalesce();
+	// test_coalesce();
 
     // test this last
 	test_extend_heap();
