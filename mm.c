@@ -383,8 +383,6 @@ int mm_init(void)
 	    SET_FREE_LIST_PTR(i, NULL);
     }
 
-    char *heap_ptr; // Pointer to begining of heap 
-
     if ((long)(heap_ptr = mem_sbrk(4*WORD_SIZE)) == -1) // 3, 2 for prolog, 2 for epilog
         return -1;
 
