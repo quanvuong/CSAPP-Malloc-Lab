@@ -41,7 +41,7 @@ team_t team = {
 
 #define WORD_SIZE 4 /* bytes */
 #define D_WORD_SIZE 8
-#define CHUNK (1<<12) /* extend heap by this amount (bytes) */
+#define CHUNK ((1<<12)/WORD_SIZE) /* extend heap by this amount (words) */
 #define STATUS_BIT_SIZE 3 // bits
 #define HDR_FTR_SIZE 2 // in words
 #define HDR_SIZE 1 // in words
