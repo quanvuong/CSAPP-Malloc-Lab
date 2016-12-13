@@ -385,12 +385,12 @@ int mm_init(void)
 
     char *heap_ptr; // Pointer to begining of heap 
 
-    if ((long)(heap_ptr = mem_sbrk(WORD_SIZE)) == -1)
+    if ((long)(heap_ptr = mem_sbrk(3*WORD_SIZE)) == -1) // 3, 2 for prolog, 1 for epilog
         return -1;
 
-    PUT_WORD(heap_ptr + WORD_SIZE, PACK(D_WORD_SIZE, TAKEN)); // Prolog header
-    PUT_WORD(heap_ptr + 2*WORD_SIZE, PACK(D_WORD_SIZE, TAKEN)); // Prolog footer 
-    PUT_WORD(heap_ptr + 3*WORD_SIZE, PACK(0, TAKEN)); // Epilog 
+    PUT_WORD(heap_ptr, PACK(0, TAKEN)); // Prolog header
+    PUT_WORD(FTRP(heap_ptr), PACK(0, TAKEN)); // Prolog footer 
+    PUT_WORD(NEXT_BLOCK_IN_HEAP(heap_ptr), PACK(0, TAKEN)); // Epilog 
 
     if (extend_heap(CHUNK) == NULL)
         return -1;
