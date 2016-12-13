@@ -41,7 +41,7 @@ team_t team = {
 
 #define WORD_SIZE 4 /* bytes */
 #define D_WORD_SIZE 8
-#define CHUNK (1<<12) /* extend heap by this amount (bytes) */
+#define CHUNK ((1<<12)/WORD_SIZE) /* extend heap by this amount (words) */
 #define STATUS_BIT_SIZE 3 // bits
 #define HDR_FTR_SIZE 2 // in words
 #define HDR_SIZE 1 // in words
@@ -86,7 +86,6 @@ team_t team = {
 // Define this so later when we move to store the list in heap,
 // we can just change this function
 #define GET_FREE_LIST_PTR(i) (main_free_list[i])
-
 #define SET_FREE_LIST_PTR(i, ptr) (main_free_list[i] = ptr)
 
 // Set pred or succ for free blocks
@@ -427,10 +426,25 @@ int mm_init(void)
 {
     // Initialize the free list
     for (int i = 0; i <= MAX_POWER; i++) {
-				SET_FREE_LIST_PTR(i, NULL);
+	    SET_FREE_LIST_PTR(i, NULL);
     }
 
-    mm_check();
+    if ((long)(heap_ptr = mem_sbrk(4*WORD_SIZE)) == -1) // 2 for prolog, 2 for epilog
+        return -1;
+
+    PUT_WORD(heap_ptr, PACK(0, TAKEN)); // Prolog header
+    PUT_WORD(FTRP(heap_ptr), PACK(0, TAKEN)); // Prolog footer 
+
+	char ** epilog = NEXT_BLOCK_IN_HEAP(heap_ptr);
+    PUT_WORD(epilog, PACK(0, TAKEN)); // Epilog header 
+    PUT_WORD(FTRP(epilog), PACK(0, TAKEN)); // Epilog footer
+
+	heap_ptr += HDR_FTR_SIZE; // Move past prolog  
+
+    if (extend_heap(CHUNK) == NULL)
+        return -1;
+
+    return 0;
 }
 
 /*
@@ -1312,15 +1326,16 @@ int mm_check()
     test_GET_PTR_PRED_FIELD();
     test_GET_PTR_SUCC_FIELD();
     test_GET_SUCC();
-		test_GET_PRED();
+	test_GET_PRED();
     test_place_block_into_free_list();
     test_remove_block_from_free_list();
+	test_PREV_IN_HEAP();
+	test_NEXT_IN_HEAP();
     test_find_free_block();
 		test_PREV_IN_HEAP();
 		test_NEXT_IN_HEAP();
 		test_coalesce();
 		test_alloc_free_block();
-
     // test this last
-		test_extend_heap();
+	test_extend_heap();
 }
