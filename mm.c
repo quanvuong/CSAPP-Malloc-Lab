@@ -233,13 +233,55 @@ static void *find_free_block(size_t words) {
 }
 
 /*
-	Assume that size in words given is <= the size of the block at input.
-	bp input is the block that you found already that is large enough.
-	The function reduces the size of the block if it is too large.
+	The function takes free block and changes status to taken.
+	The function reduces the size of the block (splits it) if size is too large.
 	The remaining size is either placed in free_list or left hanging if it is 0.
+	bp input is the block that you found already that is large enough.
+	Assume that size in words given is <= the size of the block at input.
 */
 static void alloc_free_block(void *bp, size_t words) {
+	size_t bp_size = GET_SIZE(bp);
+	size_t bp_tot_size = bp_size + HDR_FTR_SIZE;
 
+	size_t needed_size = words;
+	size_t needed_tot_size = words + HDR_FTR_SIZE;
+
+	size_t new_block_size;
+	size_t new_block_tot_size;
+
+	// the block created from extra free space
+	char **new_block;
+
+	// to allocate block, first remove it from free list
+	remove_block_from_free_list(bp);
+
+	// if size of block is larger than needed size, split the block
+	// handle new block by making it part of the free block ecosystem
+	if (bp_size > needed_size) {
+		// find new block's sizes
+		new_block_tot_size = bp_tot_size - needed_tot_size;
+		new_block_size = new_block_tot_size - HDR_FTR_SIZE;
+
+		// set new block pointer at offset from start of bp
+		new_block = (char **)(bp) + needed_tot_size;
+
+		// set new block's size and status
+		PUT_WORD(new_block, PACK(new_block_size, FREE));
+		PUT_WORD(FTRP(new_block), PACK(new_block_size, FREE));
+
+		// check if new block can become larger that it is
+		coalesce(new_block);
+
+		// handle this new block by putting back into free list
+		// if it is too small (size 0) do nothing
+		if (new_block_size > 0) {
+			place_block_into_free_list(new_block);
+		}
+	}
+
+	// set bp size to exact needed size
+	PUT_WORD(bp, PACK(needed_size, TAKEN));
+	PUT_WORD(FTRP(bp), PACK(needed_size, TAKEN));
 }
 
 /*
