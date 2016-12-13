@@ -383,14 +383,14 @@ int mm_init(void)
 	    SET_FREE_LIST_PTR(i, NULL);
     }
 
-    char *heap_start; // Pointer to begining of heap 
+    char *heap_ptr; // Pointer to begining of heap 
 
-    if ((long)(heap_start = mem_sbrk(WORD_SIZE)) == -1)
+    if ((long)(heap_ptr = mem_sbrk(WORD_SIZE)) == -1)
         return -1;
 
-    PUT_WORD(heap_start + WORD_SIZE, PACK(D_WORD_SIZE, TAKEN)); // Prolog header
-    PUT_WORD(heap_start + 2*WORD_SIZE, PACK(D_WORD_SIZE, TAKEN)); // Prolog footer 
-    PUT_WORD(heap_start + 3*WORD_SIZE, PACK(0, TAKEN)); // Epilog 
+    PUT_WORD(heap_ptr + WORD_SIZE, PACK(D_WORD_SIZE, TAKEN)); // Prolog header
+    PUT_WORD(heap_ptr + 2*WORD_SIZE, PACK(D_WORD_SIZE, TAKEN)); // Prolog footer 
+    PUT_WORD(heap_ptr + 3*WORD_SIZE, PACK(0, TAKEN)); // Epilog 
 
     if (extend_heap(CHUNK) == NULL)
         return -1;
