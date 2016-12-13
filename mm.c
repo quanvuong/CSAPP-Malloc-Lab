@@ -454,16 +454,28 @@ int mm_init(void)
 void *mm_malloc(size_t size)
 {
 	size_t words = ALIGN(size) / WORD_SIZE;
+	size_t extendsize;
 	char **bp;
-
-	// check if there is a block that is large enough
-	if ((bp = find_free_block(words)) != NULL) {
-
-	}
 
 	if (size == 0) {
 		return NULL;
 	}
+
+	// check if there is a block that is large enough
+	// if not, extend the heap
+	if ((bp = find_free_block(words)) == NULL) {
+		extendsize = words > CHUNK ? words : CHUNK;
+
+		if ((bp = extend_heap(extendsize)) == NULL) {
+			return NULL;
+		}
+
+		// do not remove block from free list because it is not in it
+		alloc_free_block(bp);
+	}
+
+	remove_block_from_free_list(bp);
+	alloc_free_block(bp);
 }
 
 /*
