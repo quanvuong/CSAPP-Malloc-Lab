@@ -86,7 +86,6 @@ team_t team = {
 // Define this so later when we move to store the list in heap,
 // we can just change this function
 #define GET_FREE_LIST_PTR(i) (main_free_list[i])
-
 #define SET_FREE_LIST_PTR(i, ptr) (main_free_list[i] = ptr)
 
 // Set pred or succ for free blocks
@@ -381,10 +380,24 @@ int mm_init(void)
 {
     // Initialize the free list
     for (int i = 0; i <= MAX_POWER; i++) {
-				SET_FREE_LIST_PTR(i, NULL);
+	    SET_FREE_LIST_PTR(i, NULL);
     }
 
+    char *heap_start; // Pointer to begining of heap 
+
+    if ((long)(heap_start = mem_sbrk(WORD_SIZE)) == -1)
+        return -1;
+
+    PUT_WORD(heap_start + WORD_SIZE, PACK(D_WORD_SIZE, TAKEN)); // Prolog header
+    PUT_WORD(heap_start + 2*WORD_SIZE, PACK(D_WORD_SIZE, TAKEN)); // Prolog footer 
+    PUT_WORD(heap_start + 3*WORD_SIZE, PACK(0, TAKEN)); // Epilog 
+
+    if (extend_heap(CHUNK) == NULL)
+        return -1;
+
     mm_check();
+
+    return 0;
 }
 
 /*
@@ -1125,14 +1138,14 @@ int mm_check()
     test_GET_PTR_PRED_FIELD();
     test_GET_PTR_SUCC_FIELD();
     test_GET_SUCC();
-		test_GET_PRED();
+	test_GET_PRED();
     test_place_block_into_free_list();
     test_remove_block_from_free_list();
     test_find_free_block();
-		test_PREV_IN_HEAP();
-		test_NEXT_IN_HEAP();
-		test_coalesce();
+	test_PREV_IN_HEAP();
+	test_NEXT_IN_HEAP();
+	test_coalesce();
 
     // test this last
-		test_extend_heap();
+	test_extend_heap();
 }
