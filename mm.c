@@ -47,6 +47,7 @@ team_t team = {
 #define HDR_SIZE 1 // in words
 #define FTR_SIZE 1 // in words
 #define PRED_FIELD_SIZE 1 // in words
+#define EPILOG_SIZE 2 // in words
 
 // Read and write a word at address p
 #define GET_BYTE(p) (*(char *)(p))
@@ -149,12 +150,36 @@ static void *coalesce(void *bp) {
 /*
 	Relies on mem_sbrk to create a new free block.
 	Does not coalesce.
+	Does not place into free list.
 	Returns pointer to the new block of memory with
 	header and footer already defined.
 	Returns NULL if we ran out of physical memory.
 */
 static void *extend_heap(size_t words) {
+	char **bp; // pointer to the free block formed by extending memory
+	char **end_pointer; // pointer to the end of the free block
+	size_t words_extend = EVENIZE(words); // make sure double aligned
+	size_t words_extend_tot = words_extend + HDR_FTR_SIZE; // add header and footer
 
+	// extend memory by so many words
+	// multiply words by WORD_SIZE because mem_sbrk takes input as bytes
+	if ((long)(bp = mem_sbrk((words_extend_tot) * WORD_SIZE)) == -1) {
+		return NULL;
+	}
+
+	// offset to make use of old epilog and add space for new epilog
+	bp -= EPILOG_SIZE;
+
+	// set new block header/footer to size (in words)
+	PUT_WORD(bp, PACK(words_extend, FREE));
+	PUT_WORD(FTRP(bp), PACK(words_extend, FREE));
+
+	// add epilog to the end
+	end_pointer = bp + words_extend_tot;
+	PUT_WORD(end_pointer, PACK(0, TAKEN));
+	PUT_WORD(FTRP(end_pointer), PACK(0, TAKEN));
+
+	return bp;
 }
 
 /*
@@ -162,10 +187,50 @@ static void *extend_heap(size_t words) {
 	enough to hold the amount of words specified.
 	Returns the pointer to that block.
 	Does not take the block out of the free list.
+	Does not extend heap.
+	Returns the pointer to the block.
 	Returns NULL if block large enough is not found.
 */
 static void *find_free_block(size_t words) {
+	char **bp;
+	size_t index = find_free_list_index(words);
 
+	// check if first free list can contain large enough block
+	if ((bp = GET_FREE_LIST_PTR(index)) != NULL && GET_SIZE(bp) >= words) {
+		// iterate through blocks
+		while(1) {
+			// if block is of exact size, return right away
+			if (GET_SIZE(bp) == words) {
+				return bp;
+			}
+
+			// if next block is not possible, return current one
+			if (GET_SUCC(bp) == NULL || GET_SIZE(GET_SUCC(bp)) < words) {
+				return bp;
+			} else {
+				bp = GET_SUCC(bp);
+			}
+		}
+	}
+
+	// move on from current free list
+	index++;
+
+	// find a large enough non-empty free list
+	while (GET_FREE_LIST_PTR(index) == NULL && index <= MAX_POWER) {
+		index++;
+	}
+
+	// if there is a non-NULL free list, go until the smallest block in free list
+	if ((bp = GET_FREE_LIST_PTR(index)) != NULL) {
+		while (GET_SUCC(bp) != NULL) {
+			bp = GET_SUCC(bp);
+		}
+
+		return bp;
+	} else { // if no large enough free list available, return NULL
+		return NULL;
+	}
 }
 
 /*
@@ -713,6 +778,91 @@ static void test_remove_block_from_free_list() {
 	assert(GET_SUCC(third_block) == NULL);
 	assert(GET_PRED(third_block) == NULL);
 
+  printf("Test passed.\n\n");
+}
+
+static void test_extend_heap() {
+	printf("Test extend_heap.\n");
+
+	char **test_heap_ptr;
+	char **initial_epilog_location;
+	char **initial_heap_end;
+	char **new_epilog_location;
+	size_t initial_heap_size = 8; // words
+	size_t new_block_size = 50; // words
+
+	// create initial heap and epilog taken space at the end
+	test_heap_ptr = mem_sbrk((initial_heap_size) * WORD_SIZE);
+	initial_epilog_location = test_heap_ptr + initial_heap_size - EPILOG_SIZE;
+	initial_heap_end = test_heap_ptr + initial_heap_size;
+	new_epilog_location = initial_heap_end + new_block_size + HDR_FTR_SIZE - EPILOG_SIZE;
+	PUT_WORD(initial_epilog_location, PACK(0, TAKEN));
+	PUT_WORD(initial_epilog_location + HDR_SIZE, PACK(0, TAKEN));
+
+	extend_heap(50);
+
+	// check that block was created and placed to start where old heap epilog was
+	assert(GET_SIZE(initial_epilog_location) == new_block_size);
+	assert(GET_STATUS(initial_epilog_location) == FREE);
+	assert(GET_SIZE(FTRP(initial_epilog_location)) == new_block_size);
+	assert(GET_STATUS(FTRP(initial_epilog_location)) == FREE);
+
+	// check that extra epilog was created at the end of the new heap space
+	assert(GET_SIZE(new_epilog_location) == 0);
+	assert(GET_STATUS(new_epilog_location) == TAKEN);
+	assert(GET_SIZE(FTRP(new_epilog_location)) == 0);
+	assert(GET_STATUS(FTRP(new_epilog_location)) == TAKEN);
+
+  printf("Test passed.\n\n");
+}
+
+static void test_find_free_block() {
+	printf("Test find_free_block.\n");
+
+	char *free_list_backup[MAX_POWER + 1]; // backing up main_free_list to restore after test
+	for (int i = 0; i <= MAX_POWER; i++) {
+		free_list_backup[i] = GET_FREE_LIST_PTR(i);
+	}
+
+	char **bp;
+
+	initialize_free_lists_for_test();
+
+	// Case 1: find by size that is smaller than index
+	bp = find_free_block(2);
+	assert(GET_SIZE(bp) == 40);
+	printf("Case 1 passed.\n");
+
+	// Case 2: find by size that matches smallest block in index
+	bp = find_free_block(33);
+	assert(GET_SIZE(bp) == 40);
+	printf("Case 2 passed.\n");
+
+	// Case 3: find by size so that middle block in index is found
+	bp = find_free_block(42);
+	assert(GET_SIZE(bp) == 53);
+	printf("Case 3 passed.\n");
+
+	// Case 4: find by size so that largest block in index is used
+	bp = find_free_block(59);
+	assert(GET_SIZE(bp) == 60);
+	printf("Case 4 passed.\n");
+
+	// Case 5: find by size that is too big for current index and other indices
+	bp = find_free_block(63);
+	assert(bp == NULL);
+	printf("Case 5 passed.\n");
+
+	// Case 6: find by size that is too big from the start
+	bp = find_free_block(120);
+	assert(bp == NULL);
+	printf("Case 6 passed.\n");
+
+	// Case 7: find by exact size
+	bp = find_free_block(53);
+	assert(GET_SIZE(bp) == 53);
+	printf("Case 7 passed.\n");
+
 	// Restoring the value in main_free_list so that test doesn't have harmful side effects
 	for (int i = 0; i <= MAX_POWER; i++) {
 		SET_FREE_LIST_PTR(i, free_list_backup[i]);
@@ -720,7 +870,6 @@ static void test_remove_block_from_free_list() {
 
 	printf("Test passed.\n\n");
 }
-
 
 int mm_check()
 {
@@ -739,5 +888,10 @@ int mm_check()
     test_GET_SUCC();
 		test_GET_PRED();
     test_place_block_into_free_list();
-		test_remove_block_from_free_list();
+    test_remove_block_from_free_list();
+    test_find_free_block();
+    
+    
+    // test this last
+		test_extend_heap();
 }
