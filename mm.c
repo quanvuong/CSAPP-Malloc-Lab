@@ -448,12 +448,22 @@ int mm_init(void)
 }
 
 /*
- * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
- */
+	Input is in bytes
+*/
+
 void *mm_malloc(size_t size)
 {
+	size_t words = ALIGN(size) / WORD_SIZE;
+	char **bp;
 
+	// check if there is a block that is large enough
+	if ((bp = find_free_block(words)) != NULL) {
+
+	}
+
+	if (size == 0) {
+		return NULL;
+	}
 }
 
 /*
