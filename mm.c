@@ -393,6 +393,8 @@ int mm_init(void)
     PUT_WORD(epilog, PACK(0, TAKEN)); // Epilog header 
     PUT_WORD(FTRP(epilog), PACK(0, TAKEN)); // Epilog footer
 
+	heap_ptr += HDR_FTR_SIZE; // Move past prolog  
+
     if (extend_heap(CHUNK) == NULL)
         return -1;
 
