@@ -103,10 +103,10 @@ team_t team = {
 #define GET_SUCC(bp) (*(GET_PTR_SUCC_FIELD(bp)))
 
 // Given pointer to current block, return pointer to header of previous block
-#define PREV_BLOCK_IN_HEAP(header_p) ((char **)(header_p) - GET_SIZE((char **)(header_p) - 1) - HDR_FTR_SIZE)
+#define PREV_BLOCK_IN_HEAP(header_p) ((char **)(header_p) - GET_TOTAL_SIZE((char **)(header_p) - HDR_SIZE))
 
 // Given pointer to current block, return pointer to header of next block
-#define NEXT_BLOCK_IN_HEAP(header_p) (FTRP(header_p) + 1)
+#define NEXT_BLOCK_IN_HEAP(header_p) (FTRP(header_p) + FTR_SIZE)
 
 // Global variables
 static char *main_free_list[MAX_POWER + 1];
@@ -148,8 +148,7 @@ static size_t find_free_list_index(size_t words) {
 	physical memory with neigboring free blocks.
 	Returns the pointer to the beginning of this
 	new free block.
-	Coalesce is only called when a taken block is freed,
-	before the free block is placed into the free list.
+	Coalesce is only called on a block that is not in the free list.
 	As such, coalesce does not set pointer values.
 */
 static void *coalesce(void *bp) {
