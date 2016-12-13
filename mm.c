@@ -273,13 +273,59 @@ static void *find_free_block(size_t words) {
 }
 
 /*
-	Assume that size in words given is <= the size of the block at input.
+	The function takes free block and changes status to taken.
+	The free block is assumed to have been removed from free list.
+	The function reduces the size of the free block (splits it) if size is too large.
+	Too large is a free block whose size is > needed size + HDR_FTR_SIZE
+	The remaining size is either placed in free_list or left hanging if it is > 0.
+	If remaining size is 0 it becomes part of the allocated block.
 	bp input is the block that you found already that is large enough.
-	The function reduces the size of the block if it is too large.
-	The remaining size is either placed in free_list or left hanging if it is 0.
+	Assume that size in words given is <= the size of the block at input.
 */
 static void alloc_free_block(void *bp, size_t words) {
+	size_t bp_size = GET_SIZE(bp);
+	size_t bp_tot_size = bp_size + HDR_FTR_SIZE;
 
+	size_t needed_size = words;
+	size_t needed_tot_size = words + HDR_FTR_SIZE;
+
+	int new_block_tot_size = bp_tot_size - needed_tot_size;
+	int new_block_size = new_block_tot_size - HDR_FTR_SIZE;
+
+	// the block created from extra free space
+	char **new_block;
+
+	// if size of block is larger than needed size, split the block
+	// handle new block by making it part of the free block ecosystem
+	if ((int)new_block_size > 0) {
+		// set new block pointer at offset from start of bp
+		new_block = (char **)(bp) + needed_tot_size;
+
+		// set new block's size and status
+		PUT_WORD(new_block, PACK(new_block_size, FREE));
+		PUT_WORD(FTRP(new_block), PACK(new_block_size, FREE));
+
+		// set bp size to exact needed size
+		PUT_WORD(bp, PACK(needed_size, TAKEN));
+		PUT_WORD(FTRP(bp), PACK(needed_size, TAKEN));
+
+		// check if new block can become larger than it is
+		coalesce(new_block);
+
+		// handle this new block by putting back into free list
+		place_block_into_free_list(new_block);
+	} else if (new_block_size == 0) {
+		// if the new_block_size is zero there is no point in separating the blocks
+		// thus the extra two words are just kept as part of the allocated block
+		needed_size += HDR_FTR_SIZE;
+
+		PUT_WORD(bp, PACK(needed_size, TAKEN));
+		PUT_WORD(FTRP(bp), PACK(needed_size, TAKEN));
+	} else {
+		// if exact size just change status
+		PUT_WORD(bp, PACK(needed_size, TAKEN));
+		PUT_WORD(FTRP(bp), PACK(needed_size, TAKEN));
+	}
 }
 
 /*
@@ -1110,6 +1156,147 @@ static void test_coalesce() {
 	printf("Coalesce test passed.\n\n");
 }
 
+static void test_alloc_free_block() {
+	printf("Testing alloc_free_block.\n");
+
+	char *free_list_backup[MAX_POWER + 1]; // backing up main_free_list to restore after test
+	for (int i = 0; i <= MAX_POWER; i++) {
+		free_list_backup[i] = GET_FREE_LIST_PTR(i);
+	}
+
+	// coalesce check variables
+	size_t prev_size;
+	size_t next_size;
+	size_t total_block_size;
+	size_t new_size;
+	size_t extra_space;
+
+	char **p_prev;
+	char **p_next;
+
+
+	initialize_free_lists_for_test();
+
+	size_t needed_size;
+	size_t free_block_size;
+	size_t tot_free_block_size;
+
+	char **total_block;
+	char **free_block;
+
+	// Case 1: alloc free block that is exact size
+	free_block_size = 50;
+	needed_size = 50;
+	tot_free_block_size = free_block_size + HDR_FTR_SIZE;
+	free_block = malloc(WORD_SIZE*tot_free_block_size);
+	PUT_WORD(free_block, PACK(free_block_size, FREE));
+	PUT_WORD(FTRP(free_block), PACK(free_block_size, FREE));
+
+	alloc_free_block(free_block, needed_size);
+	assert(GET_SIZE(free_block) == needed_size);
+	assert(GET_STATUS(free_block) == TAKEN);
+	assert(GET_SIZE(FTRP(free_block)) == needed_size);
+	assert(GET_STATUS(FTRP(free_block)) == TAKEN);
+
+	free(free_block);
+
+	// Case 2: alloc free block that is larger than needed space by 2 words
+	free_block_size = 52;
+	needed_size = 50;
+	tot_free_block_size = free_block_size + HDR_FTR_SIZE;
+	free_block = malloc(WORD_SIZE*tot_free_block_size);
+	PUT_WORD(free_block, PACK(free_block_size, FREE));
+	PUT_WORD(FTRP(free_block), PACK(free_block_size, FREE));
+
+	alloc_free_block(free_block, needed_size);
+	assert(GET_SIZE(free_block) == free_block_size);
+	assert(GET_STATUS(free_block) == TAKEN);
+	assert(GET_SIZE(FTRP(free_block)) == free_block_size);
+	assert(GET_STATUS(FTRP(free_block)) == TAKEN);
+
+	free(free_block);
+
+	// Case 3: alloc free block that is larger than needed space
+	free_block_size = 116;
+	needed_size = 50;
+	tot_free_block_size = free_block_size + HDR_FTR_SIZE;
+	prev_size = 10;
+	next_size = 10;
+	total_block_size = prev_size + free_block_size + next_size + HDR_FTR_SIZE*3;
+	total_block = malloc(WORD_SIZE*total_block_size);
+	free_block = total_block + prev_size + HDR_FTR_SIZE;
+	PUT_WORD(free_block, PACK(free_block_size, FREE));
+	PUT_WORD(FTRP(free_block), PACK(free_block_size, FREE));
+
+	// setup for coalesce
+	p_prev = total_block;
+	p_next = free_block + tot_free_block_size;
+	PUT_WORD(p_prev, PACK(prev_size, TAKEN));
+	PUT_WORD(FTRP(p_prev), PACK(prev_size, TAKEN));
+	PUT_WORD(p_next, PACK(next_size, TAKEN));
+	PUT_WORD(FTRP(p_next), PACK(next_size, TAKEN));
+
+	alloc_free_block(free_block, needed_size);
+	assert(GET_SIZE(free_block) == needed_size);
+	assert(GET_STATUS(free_block) == TAKEN);
+	assert(GET_SIZE(FTRP(free_block)) == needed_size);
+	assert(GET_STATUS(FTRP(free_block)) == TAKEN);
+	assert(GET_SIZE(p_prev) == prev_size);
+	assert(GET_STATUS(p_prev) == TAKEN);
+	assert(GET_SIZE(FTRP(p_prev)) == prev_size);
+	assert(GET_STATUS(FTRP(p_prev)) == TAKEN);
+	assert(GET_SIZE(p_next) == next_size);
+	assert(GET_STATUS(p_next) == TAKEN);
+	assert(GET_SIZE(FTRP(p_next)) == next_size);
+	assert(GET_STATUS(FTRP(p_next)) == TAKEN);
+	extra_space = free_block_size - needed_size - HDR_FTR_SIZE;
+	assert(GET_SIZE(find_free_block(extra_space)) == extra_space);
+
+	free(total_block);
+
+	// Case 4: alloc free block that is larger and can coalesce
+	free_block_size = 116;
+	needed_size = 50;
+	tot_free_block_size = free_block_size + HDR_FTR_SIZE;
+	prev_size = 10;
+	next_size = 10;
+	total_block_size = prev_size + free_block_size + next_size + HDR_FTR_SIZE*3;
+	total_block = malloc(WORD_SIZE*total_block_size);
+	free_block = total_block + prev_size + HDR_FTR_SIZE;
+	PUT_WORD(free_block, PACK(free_block_size, FREE));
+	PUT_WORD(FTRP(free_block), PACK(free_block_size, FREE));
+
+	// setup for coalesce
+	p_prev = total_block;
+	p_next = free_block + tot_free_block_size;
+	PUT_WORD(p_prev, PACK(prev_size, TAKEN));
+	PUT_WORD(FTRP(p_prev), PACK(prev_size, TAKEN));
+	PUT_WORD(p_next, PACK(next_size, FREE));
+	PUT_WORD(FTRP(p_next), PACK(next_size, FREE));
+	place_block_into_free_list(p_next);
+
+	alloc_free_block(free_block, needed_size);
+	assert(GET_SIZE(free_block) == needed_size);
+	assert(GET_STATUS(free_block) == TAKEN);
+	assert(GET_SIZE(FTRP(free_block)) == needed_size);
+	assert(GET_STATUS(FTRP(free_block)) == TAKEN);
+	assert(GET_SIZE(p_prev) == prev_size);
+	assert(GET_STATUS(p_prev) == TAKEN);
+	assert(GET_SIZE(FTRP(p_prev)) == prev_size);
+	assert(GET_STATUS(FTRP(p_prev)) == TAKEN);
+	extra_space = free_block_size + HDR_FTR_SIZE + next_size - needed_size - HDR_FTR_SIZE;
+	assert(GET_SIZE(find_free_block(extra_space)) == extra_space);
+
+	free(total_block);
+
+	// Restoring the value in main_free_list so that test doesn't have harmful side effects
+	for (int i = 0; i <= MAX_POWER; i++) {
+		SET_FREE_LIST_PTR(i, free_list_backup[i]);
+	}
+
+	printf("alloc_free_block test passed.\n\n");
+}
+
 int mm_check()
 {
     test_find_free_list_index();
@@ -1132,6 +1319,7 @@ int mm_check()
 		test_PREV_IN_HEAP();
 		test_NEXT_IN_HEAP();
 		test_coalesce();
+		test_alloc_free_block();
 
     // test this last
 		test_extend_heap();
