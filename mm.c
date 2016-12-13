@@ -63,7 +63,7 @@ team_t team = {
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 
-// Pack a size and allocated bit into a wBIT_ord
+// Pack a size and allocated bit into a BIT_word
 #define PACK(size, status) ((size<<STATUS_BIT_SIZE) | (status))
 
 /* Round up to even */
@@ -101,6 +101,12 @@ team_t team = {
 // ptr should point to the header of the free block
 #define GET_PRED(bp) (*(GET_PTR_PRED_FIELD(bp)))
 #define GET_SUCC(bp) (*(GET_PTR_SUCC_FIELD(bp)))
+
+// Given pointer to current block, return pointer to header of previous block
+#define PREV_BLOCK_IN_HEAP(header_p) ((char **)(header_p) - GET_TOTAL_SIZE((char **)(header_p) - FTR_SIZE))
+
+// Given pointer to current block, return pointer to header of next block
+#define NEXT_BLOCK_IN_HEAP(header_p) (FTRP(header_p) + FTR_SIZE)
 
 // Global variables
 static char *main_free_list[MAX_POWER + 1];
@@ -142,9 +148,42 @@ static size_t find_free_list_index(size_t words) {
 	physical memory with neigboring free blocks.
 	Returns the pointer to the beginning of this
 	new free block.
+	Coalesce is only called on a block that is not in the free list.
+	As such, coalesce does not set pointer values.
 */
 static void *coalesce(void *bp) {
+	char **prev_block = PREV_BLOCK_IN_HEAP(bp);
+	char **next_block = NEXT_BLOCK_IN_HEAP(bp);
+	size_t prev_status = GET_STATUS(prev_block);
+	size_t next_status = GET_STATUS(next_block);
+	size_t new_size = GET_SIZE(bp);
 
+	if (prev_status == TAKEN && next_status == TAKEN) {
+		return bp;
+	} else if (prev_status == TAKEN && next_status == FREE) {
+		remove_block_from_free_list(next_block);
+		new_size += GET_TOTAL_SIZE(next_block);
+
+		PUT_WORD(bp, PACK(new_size, FREE));
+		PUT_WORD(FTRP(next_block), PACK(new_size, FREE));
+	} else if (prev_status == FREE && next_status == TAKEN) {
+		remove_block_from_free_list(prev_block);
+		new_size += GET_TOTAL_SIZE(prev_block);
+
+		PUT_WORD(prev_block, PACK(new_size, FREE));
+		PUT_WORD(FTRP(bp), PACK(new_size, FREE));
+		bp = prev_block;
+	} else {
+		remove_block_from_free_list(prev_block);
+		remove_block_from_free_list(next_block);
+		new_size += GET_TOTAL_SIZE(prev_block) + GET_TOTAL_SIZE(next_block);
+
+		PUT_WORD(prev_block, PACK(new_size, FREE));
+		PUT_WORD(FTRP(next_block), PACK(new_size, FREE));
+		bp = prev_block;
+	}
+
+	return bp;
 }
 
 /*
@@ -244,14 +283,18 @@ static void alloc_free_block(void *bp, size_t words) {
 }
 
 /*
-	Removes a block from the free list.
-	Assumes the block is in the free list beforehand.
+	Removes a block from the free list if block size is larger than zero.
+	Does nothing if it is zero.
 	Does not return the pointer to that block.
 */
 static void remove_block_from_free_list(char **bp) {
 	char **prev_block = GET_PRED(bp);
 	char **next_block = GET_SUCC(bp);
 	int index;
+
+	if (GET_SIZE(bp) == 0) {
+		return;
+	}
 
 	// if largest block in free list set free list to next ptr
 	if (prev_block == NULL) {
@@ -280,6 +323,12 @@ static void place_block_into_free_list(char **bp) {
 
     char **front_ptr = GET_FREE_LIST_PTR(index);
     char **back_ptr = NULL;
+
+		// If the block size is zero than it doesn't belong in the free list
+		// because it doesn't have enough space for pointers
+		if (size == 0) {
+			return;
+		}
 
     // If the free list is empty
     if (front_ptr == NULL)
@@ -503,7 +552,7 @@ static void test_FTRP()
     printf("Test FTRP.\n");
     int test_block_size = 10; // Does not include size of header and footer
     char **header_p;
-    char **ptr = malloc(WORD_SIZE*test_block_size);
+    char **ptr = malloc(WORD_SIZE*(test_block_size + HDR_FTR_SIZE));
     header_p = ptr;
 
     PUT_WORD(header_p, PACK(test_block_size, TAKEN));
@@ -695,6 +744,27 @@ static void test_place_block_into_free_list_case_4()
     free(new_block);
 }
 
+// Case 5: New block is of size zero
+static void test_place_block_into_free_list_case_5()
+{
+    initialize_free_lists_for_test();
+
+    // New Block
+    int new_b_size = 0;
+    char **new_block = malloc((new_b_size+HDR_FTR_SIZE)*WORD_SIZE);
+    PUT_WORD(new_block, PACK(new_b_size, FREE));
+    PUT_WORD(FTRP(new_block), PACK(new_b_size, FREE));
+
+    int index = find_free_list_index(new_b_size);
+
+    place_block_into_free_list(new_block);
+
+    assert(GET_FREE_LIST_PTR(index) == NULL);
+    assert(GET_SIZE(new_block) == 0);
+		assert(GET_STATUS(new_block) == FREE);
+    free(new_block);
+}
+
 
 static void test_place_block_into_free_list()
 {
@@ -731,6 +801,9 @@ static void test_place_block_into_free_list()
 
     // Case 4: Free list not empty. New block is the biggest block in list
     test_place_block_into_free_list_case_4();
+
+		// Case 5: New block is of size zero
+		test_place_block_into_free_list_case_5();
 
     // Restoring the value in main_free_list so that test doesn't have harmful side effects
     for (int i = 0; i <= MAX_POWER; i++) {
@@ -777,6 +850,18 @@ static void test_remove_block_from_free_list() {
 	assert(GET_FREE_LIST_PTR(index) == NULL);
 	assert(GET_SUCC(third_block) == NULL);
 	assert(GET_PRED(third_block) == NULL);
+
+	// Case 4: try to remove zero-size free block
+	char **size_zero_block = malloc(WORD_SIZE*HDR_FTR_SIZE);
+	PUT_WORD(size_zero_block, PACK(0, FREE));
+	PUT_WORD(FTRP(size_zero_block), PACK(0, FREE));
+
+	remove_block_from_free_list(size_zero_block);
+
+	assert(GET_SIZE(size_zero_block) == 0);
+	assert(GET_STATUS(size_zero_block) == FREE);
+	assert(GET_SIZE(FTRP(size_zero_block)) == 0);
+	assert(GET_STATUS(FTRP(size_zero_block)) == FREE);
 
   printf("Test passed.\n\n");
 }
@@ -863,12 +948,166 @@ static void test_find_free_block() {
 	assert(GET_SIZE(bp) == 53);
 	printf("Case 7 passed.\n");
 
+	// Case 8: find zero size - should still attempt to get the next-largest block
+	bp = find_free_block(0);
+	assert(GET_SIZE(bp) == 40);
+	printf("Case 8 passed.\n");
+
 	// Restoring the value in main_free_list so that test doesn't have harmful side effects
 	for (int i = 0; i <= MAX_POWER; i++) {
 		SET_FREE_LIST_PTR(i, free_list_backup[i]);
 	}
 
 	printf("Test passed.\n\n");
+}
+
+static void test_PREV_IN_HEAP() {
+	printf("Testing PREV_IN_HEAP.\n");
+
+	size_t prev_size = 4;
+	size_t curr_size = 10;
+	size_t total_needed_test_size = prev_size + curr_size + HDR_FTR_SIZE*2;
+
+	char **ptr = malloc(WORD_SIZE * total_needed_test_size);
+	char **p_prev = ptr;
+	char **p_curr = ptr + HDR_FTR_SIZE + prev_size;
+
+	PUT_WORD(p_prev, PACK(prev_size, FREE));
+	PUT_WORD(FTRP(p_prev), PACK(prev_size, FREE));
+
+	PUT_WORD(p_curr, PACK(curr_size, FREE));
+	PUT_WORD(FTRP(p_curr), PACK(curr_size, FREE));
+
+	char **tmp = ((char **)(p_curr) - GET_SIZE((char **)(p_curr) - 1) - HDR_FTR_SIZE);
+
+	assert(p_prev == PREV_BLOCK_IN_HEAP(p_curr));
+
+	printf("PREV test passed.\n\n");
+}
+
+static void test_NEXT_IN_HEAP() {
+	printf("Testing NEXT_IN_HEAP.\n");
+
+	size_t prev_size = 4;
+	size_t curr_size = 10;
+	size_t total_needed_test_size = prev_size + curr_size + HDR_FTR_SIZE*2;
+
+	char **ptr = malloc(WORD_SIZE * total_needed_test_size);
+	char **p_prev = ptr;
+	char **p_curr = ptr + HDR_FTR_SIZE + prev_size;
+
+	PUT_WORD(p_prev, PACK(prev_size, FREE));
+	PUT_WORD(FTRP(p_prev), PACK(prev_size, FREE));
+
+	PUT_WORD(p_curr, PACK(curr_size, FREE));
+	PUT_WORD(FTRP(p_curr), PACK(curr_size, FREE));
+
+	char **tmp = ((char **)(p_curr) - GET_SIZE((char **)(p_curr) - 1) - HDR_FTR_SIZE);
+
+	assert(p_curr == NEXT_BLOCK_IN_HEAP(p_prev));
+
+	printf("NEXT test passed.\n\n");
+}
+
+static void test_coalesce() {
+	printf("Testing coalesce.\n");
+
+	char *free_list_backup[MAX_POWER + 1]; // backing up main_free_list to restore after test
+	for (int i = 0; i <= MAX_POWER; i++) {
+		free_list_backup[i] = GET_FREE_LIST_PTR(i);
+	}
+
+	size_t prev_size = 0;
+	size_t curr_size = 4;
+	size_t next_size = 16;
+	size_t total_needed_size = prev_size + curr_size + next_size + HDR_FTR_SIZE*3;
+	size_t new_size;
+
+	char **ptr = malloc(WORD_SIZE * total_needed_size);
+	char **p_prev = ptr;
+	char **p_curr = p_prev + HDR_FTR_SIZE + prev_size;
+	char **p_next = p_curr + HDR_FTR_SIZE + curr_size;
+
+	// check for case when both prev and next are taken
+	PUT_WORD(p_prev, PACK(prev_size, TAKEN));
+	PUT_WORD(FTRP(p_prev), PACK(prev_size, TAKEN));
+	PUT_WORD(p_curr, PACK(curr_size, FREE));
+	PUT_WORD(FTRP(p_curr), PACK(curr_size, FREE));
+	PUT_WORD(p_next, PACK(next_size, TAKEN));
+	PUT_WORD(FTRP(p_next), PACK(next_size, TAKEN));
+
+	coalesce(p_curr);
+	assert(GET_SIZE(p_curr) == curr_size);
+	assert(GET_SIZE(FTRP(p_curr)) == curr_size);
+	assert(GET_SIZE(p_prev) == prev_size);
+	assert(GET_SIZE(FTRP(p_prev)) == prev_size);
+	assert(GET_SIZE(p_next) == next_size);
+	assert(GET_SIZE(FTRP(p_next)) == next_size);
+	assert(GET_STATUS(p_prev) == TAKEN);
+	assert(GET_STATUS(p_next) == TAKEN);
+
+	// check for case when prev taken and next free
+	PUT_WORD(p_prev, PACK(prev_size, TAKEN));
+	PUT_WORD(FTRP(p_prev), PACK(prev_size, TAKEN));
+	PUT_WORD(p_curr, PACK(curr_size, FREE));
+	PUT_WORD(FTRP(p_curr), PACK(curr_size, FREE));
+	PUT_WORD(p_next, PACK(next_size, FREE));
+	PUT_WORD(FTRP(p_next), PACK(next_size, FREE));
+
+	place_block_into_free_list(p_next);
+
+	coalesce(p_curr);
+	new_size = curr_size + next_size + HDR_FTR_SIZE;
+	assert(GET_SIZE(p_curr) == new_size);
+	assert(GET_SIZE(FTRP(p_curr)) == new_size);
+	assert(GET_SIZE(p_prev) == prev_size);
+	assert(GET_SIZE(FTRP(p_prev)) == prev_size);
+	assert(GET_STATUS(p_prev) == TAKEN);
+	// check also to see that it was removed from free list
+	assert(find_free_block(next_size) == NULL);
+
+	// check for case when prev free and next taken
+	PUT_WORD(p_prev, PACK(prev_size, FREE));
+	PUT_WORD(FTRP(p_prev), PACK(prev_size, FREE));
+	PUT_WORD(p_curr, PACK(curr_size, FREE));
+	PUT_WORD(FTRP(p_curr), PACK(curr_size, FREE));
+	PUT_WORD(p_next, PACK(next_size, TAKEN));
+	PUT_WORD(FTRP(p_next), PACK(next_size, TAKEN));
+
+	place_block_into_free_list(p_prev);
+
+	coalesce(p_curr);
+	new_size = prev_size + curr_size + HDR_FTR_SIZE;
+	assert(GET_SIZE(p_prev) == new_size);
+	assert(GET_SIZE(FTRP(p_prev)) == new_size);
+	assert(GET_STATUS(p_next) == TAKEN);
+	assert(GET_SIZE(p_next) == next_size);
+	assert(GET_SIZE(FTRP(p_next)) == next_size);
+
+	// check for case when both prev and next are free
+	PUT_WORD(p_prev, PACK(prev_size, FREE));
+	PUT_WORD(FTRP(p_prev), PACK(prev_size, FREE));
+	PUT_WORD(p_curr, PACK(curr_size, FREE));
+	PUT_WORD(FTRP(p_curr), PACK(curr_size, FREE));
+	PUT_WORD(p_next, PACK(next_size, FREE));
+	PUT_WORD(FTRP(p_next), PACK(next_size, FREE));
+
+	place_block_into_free_list(p_prev);
+	place_block_into_free_list(p_next);
+
+	coalesce(p_curr);
+	new_size = prev_size + curr_size + next_size + 2*HDR_FTR_SIZE;
+	assert(GET_SIZE(p_prev) == new_size);
+	assert(GET_SIZE(FTRP(p_prev)) == new_size);
+	// check also to see that it was removed from free list
+	assert(find_free_block(next_size) == NULL);
+
+	// Restoring the value in main_free_list so that test doesn't have harmful side effects
+	for (int i = 0; i <= MAX_POWER; i++) {
+		SET_FREE_LIST_PTR(i, free_list_backup[i]);
+	}
+
+	printf("Coalesce test passed.\n\n");
 }
 
 int mm_check()
@@ -890,8 +1129,10 @@ int mm_check()
     test_place_block_into_free_list();
     test_remove_block_from_free_list();
     test_find_free_block();
-    
-    
+		test_PREV_IN_HEAP();
+		test_NEXT_IN_HEAP();
+		test_coalesce();
+
     // test this last
 		test_extend_heap();
 }
