@@ -47,6 +47,7 @@ team_t team = {
 #define HDR_SIZE 1 // in words
 #define FTR_SIZE 1 // in words
 #define PRED_FIELD_SIZE 1 // in words
+#define EPILOG_SIZE 2 // in words
 
 // Read and write a word at address p
 #define GET_BYTE(p) (*(char *)(p))
@@ -148,12 +149,36 @@ static void *coalesce(void *bp) {
 /*
 	Relies on mem_sbrk to create a new free block.
 	Does not coalesce.
+	Does not place into free list.
 	Returns pointer to the new block of memory with
 	header and footer already defined.
 	Returns NULL if we ran out of physical memory.
 */
 static void *extend_heap(size_t words) {
+	char **bp; // pointer to the free block formed by extending memory
+	char **end_pointer; // pointer to the end of the free block
+	size_t words_extend = EVENIZE(words); // make sure double aligned
+	size_t words_extend_tot = words_extend + HDR_FTR_SIZE; // add header and footer
 
+	// extend memory by so many words
+	// multiply words by WORD_SIZE because mem_sbrk takes input as bytes
+	if ((long)(bp = mem_sbrk((words_extend_tot) * WORD_SIZE)) == -1) {
+		return NULL;
+	}
+
+	// offset to make use of old epilog and add space for new epilog
+	bp -= EPILOG_SIZE;
+
+	// set new block header/footer to size (in words)
+	PUT_WORD(bp, PACK(words_extend, FREE));
+	PUT_WORD(FTRP(bp), PACK(words_extend, FREE));
+
+	// add epilog to the end
+	end_pointer = bp + words_extend_tot;
+	PUT_WORD(end_pointer, PACK(0, TAKEN));
+	PUT_WORD(FTRP(end_pointer), PACK(0, TAKEN));
+
+	return bp;
 }
 
 /*
@@ -662,6 +687,41 @@ static void test_place_block_into_free_list()
     printf("Test passed.\n\n");
 }
 
+static void test_extend_heap() {
+	printf("Test extend_heap.\n");
+
+	char **test_heap_ptr;
+	char **initial_epilog_location;
+	char **initial_heap_end;
+	char **new_epilog_location;
+	size_t initial_heap_size = 8; // words
+	size_t new_block_size = 50; // words
+
+	// create initial heap and epilog taken space at the end
+	test_heap_ptr = mem_sbrk((initial_heap_size) * WORD_SIZE);
+	initial_epilog_location = test_heap_ptr + initial_heap_size - EPILOG_SIZE;
+	initial_heap_end = test_heap_ptr + initial_heap_size;
+	new_epilog_location = initial_heap_end + new_block_size + HDR_FTR_SIZE - EPILOG_SIZE;
+	PUT_WORD(initial_epilog_location, PACK(0, TAKEN));
+	PUT_WORD(initial_epilog_location + HDR_SIZE, PACK(0, TAKEN));
+
+	extend_heap(50);
+
+	// check that block was created and placed to start where old heap epilog was
+	assert(GET_SIZE(initial_epilog_location) == new_block_size);
+	assert(GET_STATUS(initial_epilog_location) == FREE);
+	assert(GET_SIZE(FTRP(initial_epilog_location)) == new_block_size);
+	assert(GET_STATUS(FTRP(initial_epilog_location)) == FREE);
+
+	// check that extra epilog was created at the end of the new heap space
+	assert(GET_SIZE(new_epilog_location) == 0);
+	assert(GET_STATUS(new_epilog_location) == TAKEN);
+	assert(GET_SIZE(FTRP(new_epilog_location)) == 0);
+	assert(GET_STATUS(FTRP(new_epilog_location)) == TAKEN);
+
+  printf("Test passed.\n\n");
+}
+
 static void test_find_free_block() {
 	printf("Test find_free_block.\n");
 
@@ -733,5 +793,9 @@ int mm_check()
     test_GET_PTR_SUCC_FIELD();
     test_GET_SUCC();
     test_place_block_into_free_list();
-		test_find_free_block();
+    test_find_free_block();
+
+
+		// test this last
+		test_extend_heap();
 }
