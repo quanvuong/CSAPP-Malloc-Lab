@@ -458,10 +458,23 @@ void *mm_malloc(size_t size)
 
 /*
  * mm_free - Freeing a block does nothing.
+ * Role: 
+    - change the status of block to free 
+    - coalesce the block 
+    - place block into free_lists 
+
+ * Assume: ptr points to the beginning of a block header 
  */
 void mm_free(void *ptr)
 {
+    size_t size = GET_SIZE(ptr);
 
+    PUT_WORD(ptr, PACK(size, FREE));
+    PUT_WORD(FTRP(ptr), PACK(size, FREE));
+
+    coalesce(ptr);
+
+    place_block_into_free_list(ptr);
 }
 
 /*
