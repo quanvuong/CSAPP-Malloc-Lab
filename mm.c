@@ -107,9 +107,12 @@ team_t team = {
 // Given pointer to current block, return pointer to header of next block
 #define NEXT_BLOCK_IN_HEAP(header_p) (FTRP(header_p) + FTR_SIZE)
 
+// 
+#define MOVE_PAST_HDR(bp) ((char**)(bp) + HDR_SIZE)
+
 // Global variables
 static char *main_free_list[MAX_POWER + 1];
-static char *heap_ptr;
+static char **heap_ptr;
 
 // Function Declarations
 static size_t find_free_list_index(size_t words);
@@ -255,7 +258,7 @@ static void *find_free_block(size_t words) {
 	index++;
 
 	// find a large enough non-empty free list
-	while (GET_FREE_LIST_PTR(index) == NULL && index <= MAX_POWER) {
+	while (GET_FREE_LIST_PTR(index) == NULL && index < MAX_POWER) {
 		index++;
 	}
 
@@ -429,44 +432,78 @@ int mm_init(void)
 	    SET_FREE_LIST_PTR(i, NULL);
     }
 
+	mem_sbrk(WORD_SIZE);
+
     if ((long)(heap_ptr = mem_sbrk(4*WORD_SIZE)) == -1) // 2 for prolog, 2 for epilog
         return -1;
 
     PUT_WORD(heap_ptr, PACK(0, TAKEN)); // Prolog header
-    PUT_WORD(FTRP(heap_ptr), PACK(0, TAKEN)); // Prolog footer 
+    PUT_WORD(FTRP(heap_ptr), PACK(0, TAKEN)); // Prolog footer
 
 	char ** epilog = NEXT_BLOCK_IN_HEAP(heap_ptr);
-    PUT_WORD(epilog, PACK(0, TAKEN)); // Epilog header 
+    PUT_WORD(epilog, PACK(0, TAKEN)); // Epilog header
     PUT_WORD(FTRP(epilog), PACK(0, TAKEN)); // Epilog footer
 
-	heap_ptr += HDR_FTR_SIZE; // Move past prolog  
+	heap_ptr += HDR_FTR_SIZE; // Move past prolog
 
-    if (extend_heap(CHUNK) == NULL)
+	char ** extend_ptr;
+
+    if ((extend_ptr = extend_heap(CHUNK)) == NULL)
         return -1;
+
+	place_block_into_free_list(extend_ptr);
 
     return 0;
 }
 
 /*
- * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
- */
+	Input is in bytes
+*/
+
 void *mm_malloc(size_t size)
 {
+	size_t words = ALIGN(size) / WORD_SIZE;
+	size_t extend_size;
+	char **bp;
 
+	if (size == 0) {
+		return NULL;
+	}
+
+	// check if there is a block that is large enough
+	// if not, extend the heap
+	if ((bp = find_free_block(words)) == NULL) {
+		extend_size = words > CHUNK ? words : CHUNK;
+
+		if ((bp = extend_heap(extend_size)) == NULL) {
+			return NULL;
+		}
+
+		// do not remove block from free list because it is not in it
+		alloc_free_block(bp, words);
+
+		return MOVE_PAST_HDR(bp);
+	}
+
+	remove_block_from_free_list(bp);
+	alloc_free_block(bp, words);
+
+	return MOVE_PAST_HDR(bp);
 }
 
 /*
  * mm_free - Freeing a block does nothing.
- * Role: 
-    - change the status of block to free 
-    - coalesce the block 
-    - place block into free_lists 
+ * Role:
+    - change the status of block to free
+    - coalesce the block
+    - place block into free_lists
 
- * Assume: ptr points to the beginning of a block header 
+ * Assume: ptr points to the beginning of a block header
  */
 void mm_free(void *ptr)
 {
+	ptr = (char**) (ptr) - HDR_SIZE;
+
     size_t size = GET_SIZE(ptr);
 
     PUT_WORD(ptr, PACK(size, FREE));
@@ -482,6 +519,8 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
+	// ptr = (char**)(ptr) - HDR_SIZE;
+
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
