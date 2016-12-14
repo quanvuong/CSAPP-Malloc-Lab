@@ -454,7 +454,7 @@ int mm_init(void)
 void *mm_malloc(size_t size)
 {
 	size_t words = ALIGN(size) / WORD_SIZE;
-	size_t extendsize;
+	size_t extend_size;
 	char **bp;
 
 	if (size == 0) {
@@ -464,28 +464,32 @@ void *mm_malloc(size_t size)
 	// check if there is a block that is large enough
 	// if not, extend the heap
 	if ((bp = find_free_block(words)) == NULL) {
-		extendsize = words > CHUNK ? words : CHUNK;
+		extend_size = words > CHUNK ? words : CHUNK;
 
-		if ((bp = extend_heap(extendsize)) == NULL) {
+		if ((bp = extend_heap(extend_size)) == NULL) {
 			return NULL;
 		}
 
 		// do not remove block from free list because it is not in it
 		alloc_free_block(bp);
+
+		return bp;
 	}
 
 	remove_block_from_free_list(bp);
 	alloc_free_block(bp);
+
+	return bp;
 }
 
 /*
  * mm_free - Freeing a block does nothing.
- * Role: 
-    - change the status of block to free 
-    - coalesce the block 
-    - place block into free_lists 
+ * Role:
+    - change the status of block to free
+    - coalesce the block
+    - place block into free_lists
 
- * Assume: ptr points to the beginning of a block header 
+ * Assume: ptr points to the beginning of a block header
  */
 void mm_free(void *ptr)
 {
