@@ -471,13 +471,13 @@ void *mm_malloc(size_t size)
 		}
 
 		// do not remove block from free list because it is not in it
-		alloc_free_block(bp);
+		alloc_free_block(bp, words);
 
 		return bp;
 	}
 
 	remove_block_from_free_list(bp);
-	alloc_free_block(bp);
+	alloc_free_block(bp, words);
 
 	return bp;
 }
