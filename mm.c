@@ -255,7 +255,7 @@ static void *find_free_block(size_t words) {
 	index++;
 
 	// find a large enough non-empty free list
-	while (GET_FREE_LIST_PTR(index) == NULL && index <= MAX_POWER) {
+	while (GET_FREE_LIST_PTR(index) == NULL && index < MAX_POWER) {
 		index++;
 	}
 
