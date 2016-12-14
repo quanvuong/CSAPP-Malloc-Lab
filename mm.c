@@ -107,6 +107,9 @@ team_t team = {
 // Given pointer to current block, return pointer to header of next block
 #define NEXT_BLOCK_IN_HEAP(header_p) (FTRP(header_p) + FTR_SIZE)
 
+// 
+#define MOVE_PAST_HDR(bp) ((char**)(bp) + HDR_SIZE)
+
 // Global variables
 static char *main_free_list[MAX_POWER + 1];
 static char **heap_ptr;
@@ -429,20 +432,26 @@ int mm_init(void)
 	    SET_FREE_LIST_PTR(i, NULL);
     }
 
+	mem_sbrk(WORD_SIZE);
+
     if ((long)(heap_ptr = mem_sbrk(4*WORD_SIZE)) == -1) // 2 for prolog, 2 for epilog
         return -1;
 
     PUT_WORD(heap_ptr, PACK(0, TAKEN)); // Prolog header
     PUT_WORD(FTRP(heap_ptr), PACK(0, TAKEN)); // Prolog footer
 
-		char ** epilog = NEXT_BLOCK_IN_HEAP(heap_ptr);
+	char ** epilog = NEXT_BLOCK_IN_HEAP(heap_ptr);
     PUT_WORD(epilog, PACK(0, TAKEN)); // Epilog header
     PUT_WORD(FTRP(epilog), PACK(0, TAKEN)); // Epilog footer
 
-		heap_ptr += HDR_FTR_SIZE; // Move past prolog
+	heap_ptr += HDR_FTR_SIZE; // Move past prolog
 
-    if (extend_heap(CHUNK) == NULL)
+	char ** extend_ptr;
+
+    if ((extend_ptr = extend_heap(CHUNK)) == NULL)
         return -1;
+
+	place_block_into_free_list(extend_ptr);
 
     return 0;
 }
@@ -473,13 +482,13 @@ void *mm_malloc(size_t size)
 		// do not remove block from free list because it is not in it
 		alloc_free_block(bp, words);
 
-		return bp;
+		return MOVE_PAST_HDR(bp);
 	}
 
 	remove_block_from_free_list(bp);
 	alloc_free_block(bp, words);
 
-	return bp;
+	return MOVE_PAST_HDR(bp);
 }
 
 /*
@@ -493,6 +502,8 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
+	ptr = (char**) (ptr) - HDR_SIZE;
+
     size_t size = GET_SIZE(ptr);
 
     PUT_WORD(ptr, PACK(size, FREE));
@@ -508,6 +519,8 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
+	// ptr = (char**)(ptr) - HDR_SIZE;
+
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
