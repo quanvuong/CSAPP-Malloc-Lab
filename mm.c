@@ -109,7 +109,7 @@ team_t team = {
 
 // Global variables
 static char *main_free_list[MAX_POWER + 1];
-static char *heap_ptr;
+static char **heap_ptr;
 
 // Function Declarations
 static size_t find_free_list_index(size_t words);
