@@ -35,7 +35,7 @@ team_t team = {
     "qhv200@nyu.edu"
 };
 
-#define MAX_POWER 20
+#define MAX_POWER 21
 #define TAKEN 1
 #define FREE 0
 
@@ -75,7 +75,7 @@ team_t team = {
 
 // Address of block's footer
 // Take in a pointer that points to the header
-#define FTRP(header_p) ((char **)(header_p) + GET_SIZE(header_p) + 1)
+#define FTRP(header_p) ((char **)(header_p) + GET_SIZE(header_p) + HDR_SIZE)
 
 // Get total size of a block
 // Size indicates the size of the free space in a block
@@ -109,7 +109,7 @@ team_t team = {
 
 // Global variables
 static char *main_free_list[MAX_POWER + 1];
-static char *heap_ptr;
+static char **heap_ptr;
 
 // Function Declarations
 static size_t find_free_list_index(size_t words);
@@ -172,7 +172,7 @@ static void *coalesce(void *bp) {
 		PUT_WORD(prev_block, PACK(new_size, FREE));
 		PUT_WORD(FTRP(bp), PACK(new_size, FREE));
 		bp = prev_block;
-	} else {
+	} else if (prev_status == FREE && next_status == FREE) {
 		remove_block_from_free_list(prev_block);
 		remove_block_from_free_list(next_block);
 		new_size += GET_TOTAL_SIZE(prev_block) + GET_TOTAL_SIZE(next_block);
@@ -255,7 +255,7 @@ static void *find_free_block(size_t words) {
 	index++;
 
 	// find a large enough non-empty free list
-	while (GET_FREE_LIST_PTR(index) == NULL && index <= MAX_POWER) {
+	while (GET_FREE_LIST_PTR(index) == NULL && index < MAX_POWER) {
 		index++;
 	}
 
@@ -309,7 +309,7 @@ static void alloc_free_block(void *bp, size_t words) {
 		PUT_WORD(FTRP(bp), PACK(needed_size, TAKEN));
 
 		// check if new block can become larger than it is
-		coalesce(new_block);
+		new_block = coalesce(new_block);
 
 		// handle this new block by putting back into free list
 		place_block_into_free_list(new_block);
@@ -389,6 +389,7 @@ static void place_block_into_free_list(char **bp) {
     {
 				SET_FREE_LIST_PTR(index, bp);
         SET_PTR(GET_PTR_SUCC_FIELD(bp), front_ptr);
+				SET_PTR(GET_PTR_PRED_FIELD(front_ptr), bp);
 				SET_PTR(GET_PTR_PRED_FIELD(bp), NULL);
         return;
     }
@@ -429,50 +430,85 @@ int mm_init(void)
 	    SET_FREE_LIST_PTR(i, NULL);
     }
 
+		// align to double word
+		mem_sbrk(WORD_SIZE);
+
     if ((long)(heap_ptr = mem_sbrk(4*WORD_SIZE)) == -1) // 2 for prolog, 2 for epilog
         return -1;
 
     PUT_WORD(heap_ptr, PACK(0, TAKEN)); // Prolog header
-    PUT_WORD(FTRP(heap_ptr), PACK(0, TAKEN)); // Prolog footer 
+    PUT_WORD(FTRP(heap_ptr), PACK(0, TAKEN)); // Prolog footer
 
-	char ** epilog = NEXT_BLOCK_IN_HEAP(heap_ptr);
-    PUT_WORD(epilog, PACK(0, TAKEN)); // Epilog header 
+		char ** epilog = NEXT_BLOCK_IN_HEAP(heap_ptr);
+    PUT_WORD(epilog, PACK(0, TAKEN)); // Epilog header
     PUT_WORD(FTRP(epilog), PACK(0, TAKEN)); // Epilog footer
 
-	heap_ptr += HDR_FTR_SIZE; // Move past prolog  
+		heap_ptr += HDR_FTR_SIZE; // Move past prolog
 
-    if (extend_heap(CHUNK) == NULL)
+		char **new_block;
+    if ((new_block = extend_heap(CHUNK)) == NULL)
         return -1;
+
+		// need to place into free list because extend_heap does not place it
+		place_block_into_free_list(new_block);
 
     return 0;
 }
 
 /*
- * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
- */
+	Input is in bytes
+*/
+
 void *mm_malloc(size_t size)
 {
+	size_t words = ALIGN(size) / WORD_SIZE;
+	size_t extend_size;
+	char **bp;
 
+	if (size == 0) {
+		return NULL;
+	}
+
+	// check if there is a block that is large enough
+	// if not, extend the heap
+	if ((bp = find_free_block(words)) == NULL) {
+		extend_size = words > CHUNK ? words : CHUNK;
+
+		if ((bp = extend_heap(extend_size)) == NULL) {
+			return NULL;
+		}
+
+		// do not remove block from free list because it is not in it
+		alloc_free_block(bp, words);
+
+		return bp + HDR_SIZE;
+	}
+
+	remove_block_from_free_list(bp);
+	alloc_free_block(bp, words);
+
+	return bp + HDR_SIZE;
 }
 
 /*
  * mm_free - Freeing a block does nothing.
- * Role: 
-    - change the status of block to free 
-    - coalesce the block 
-    - place block into free_lists 
+ * Role:
+    - change the status of block to free
+    - coalesce the block
+    - place block into free_lists
 
- * Assume: ptr points to the beginning of a block header 
+ * Assume: ptr points to the beginning of a block header
  */
 void mm_free(void *ptr)
 {
+		ptr -= WORD_SIZE;
+
     size_t size = GET_SIZE(ptr);
 
     PUT_WORD(ptr, PACK(size, FREE));
     PUT_WORD(FTRP(ptr), PACK(size, FREE));
 
-    coalesce(ptr);
+    ptr = coalesce(ptr);
 
     place_block_into_free_list(ptr);
 }
