@@ -85,8 +85,8 @@ team_t team = {
 
 // Define this so later when we move to store the list in heap,
 // we can just change this function
-#define GET_FREE_LIST_PTR(i) (main_free_list[i])
-#define SET_FREE_LIST_PTR(i, ptr) (main_free_list[i] = ptr)
+#define GET_FREE_LIST_PTR(i) (*(free_lists+i))
+#define SET_FREE_LIST_PTR(i, ptr) (*(free_lists+i) = ptr)
 
 // Set pred or succ for free blocks
 #define SET_PTR(p, ptr) (*(char **)(p) = (char *)(ptr))
@@ -108,7 +108,7 @@ team_t team = {
 #define NEXT_BLOCK_IN_HEAP(header_p) (FTRP(header_p) + FTR_SIZE)
 
 // Global variables
-static char *main_free_list[MAX_POWER + 1];
+static char **free_lists;
 static char **heap_ptr;
 
 // Function Declarations
@@ -221,7 +221,7 @@ static void *extend_heap(size_t words) {
 }
 
 /*
-	Finds the block from the main_free_list that is large
+	Finds the block from the free lists that is large
 	enough to hold the amount of words specified.
 	Returns the pointer to that block.
 	Does not take the block out of the free list.
@@ -425,13 +425,18 @@ static void place_block_into_free_list(char **bp) {
  */
 int mm_init(void)
 {
+	// Store the pointer to the free list on the heap 
+	int even_max_power = EVENIZE(MAX_POWER); // Maintain alignment 
+	if ((long)(free_lists = mem_sbrk(even_max_power*sizeof(char *))) == -1)
+		return -1;
+
     // Initialize the free list
     for (int i = 0; i <= MAX_POWER; i++) {
 	    SET_FREE_LIST_PTR(i, NULL);
     }
 
-		// align to double word
-		mem_sbrk(WORD_SIZE);
+	// align to double word
+	mem_sbrk(WORD_SIZE);
 
     if ((long)(heap_ptr = mem_sbrk(4*WORD_SIZE)) == -1) // 2 for prolog, 2 for epilog
         return -1;
