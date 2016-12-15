@@ -523,19 +523,74 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
+	// equivalent to mm_malloc if ptr is NULL
+	if (ptr == NULL) {
+		return mm_malloc(ptr);
+	}
 
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
-    copySize = *(size_t *)((char *)oldptr - 4);
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
-    return newptr;
+	// adjust to be at start of block
+	char **old = (char **)ptr - 1;
+	char **bp = (char **)ptr - 1;
+
+	// get intended and current size
+	size_t new_size = ALIGN(size) / WORD_SIZE; // in words
+	size_t old_size = GET_SIZE(bp); // in words
+
+	// equivalent to mm_free if size == 0
+	if (new_size == 0) {
+		mm_free(ptr);
+		return NULL;
+	} else if (new_size < old_size) { // checks if can avoid reallocating
+		PUT_WORD(bp, PACK(old_size, FREE));
+    PUT_WORD(FTRP(bp), PACK(old_size, FREE));
+		alloc_free_block(bp, new_size);
+	} else if (new_size > old_size) {
+		if (GET_SIZE(NEXT_BLOCK_IN_HEAP(bp)) + old_size + 2 >= new_size &&
+				GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == TAKEN &&
+				GET_STATUS(NEXT_BLOCK_IN_HEAP(bp)) == FREE
+		) { // checks if possible to merge with previous block in memory
+			PUT_WORD(bp, PACK(old_size, FREE));
+	    PUT_WORD(FTRP(bp), PACK(old_size, FREE));
+
+			bp = coalesce(bp);
+			alloc_free_block(bp, new_size);
+		} else if (GET_SIZE(PREV_BLOCK_IN_HEAP(bp)) + old_size + 2 >= new_size &&
+							 GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == FREE &&
+						 	 GET_STATUS(NEXT_BLOCK_IN_HEAP(bp)) == TAKEN
+		) { // checks if possible to merge with next block in memory
+		  PUT_WORD(bp, PACK(old_size, FREE));
+ 	    PUT_WORD(FTRP(bp), PACK(old_size, FREE));
+
+ 			bp = coalesce(bp);
+
+			memmove(bp + 1, old + 1, old_size * WORD_SIZE);
+ 			alloc_free_block(bp, new_size);
+		} else if (GET_SIZE(PREV_BLOCK_IN_HEAP(bp)) + GET_SIZE(NEXT_BLOCK_IN_HEAP(bp)) + old_size + 4 >= new_size &&
+							 GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == FREE &&
+							 GET_STATUS(NEXT_BLOCK_IN_HEAP(bp)) == FREE
+		) { // checks if possible to merge with both prev and next block in memory
+			PUT_WORD(bp, PACK(old_size, FREE));
+ 	    PUT_WORD(FTRP(bp), PACK(old_size, FREE));
+
+ 			bp = coalesce(bp);
+
+			memmove(bp + 1, old + 1, old_size * WORD_SIZE);
+			alloc_free_block(bp, new_size);
+		} else { // end case: if no optimization possible, just do brute force realloc
+			bp = (char **)mm_malloc(new_size*WORD_SIZE + WORD_SIZE) - 1;
+
+			if (bp == NULL) {
+				return NULL;
+			}
+
+			memcpy(bp + 1, old + 1, old_size * WORD_SIZE);
+			mm_free(old + 1);
+		}
+	}
+	// else if sizes equal, just return bp as is
+
+	// end of checks
+	return bp + HDR_SIZE;
 }
 
 static void check_free_blocks_in_one_free_list_marked_free(char ** bp)
