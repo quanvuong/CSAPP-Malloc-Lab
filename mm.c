@@ -105,7 +105,7 @@ team_t team = {
 #define PREV_BLOCK_IN_HEAP(header_p) ((char **)(header_p) - GET_TOTAL_SIZE((char **)(header_p) - FTR_SIZE))
 
 // Given pointer to current block, return pointer to header of next block
-#define NEXT_BLOCK_IN_HEAP(header_p) ((char **)FTRP(header_p) + FTR_SIZE)
+#define NEXT_BLOCK_IN_HEAP(header_p) (FTRP(header_p) + FTR_SIZE)
 
 // Global variables
 static char *main_free_list[MAX_POWER + 1];
