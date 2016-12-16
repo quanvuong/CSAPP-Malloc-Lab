@@ -122,8 +122,25 @@ static void alloc_free_block(void *bp, size_t words);
 static void place_block_into_free_list(char **bp);
 static void remove_block_from_free_list(char **bp);
 void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size);
+static int round_up_power_2 (int x);
 
 int mm_check();
+
+/// Round up to next higher power of 2 (return x if it's already a power
+/// of 2).
+/// Borrowed from http://stackoverflow.com/questions/364985/algorithm-for-finding-the-smallest-power-of-two-thats-greater-or-equal-to-a-giv
+static int round_up_power_2 (int x)
+{
+    if (x < 0)
+        return 0;
+    --x;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    return x+1;
+}
 
 /*
 	Find the index of the free list which given size belongs to.
@@ -457,18 +474,20 @@ int mm_init(void)
 		// need to place into free list because extend_heap does not place it
 		place_block_into_free_list(new_block);
 
-	// mm_check();
     return 0;
 }
 
 /*
 	Input is in bytes
 */
-
 void *mm_malloc(size_t size)
 {
+	if (size <= 1<<12) {
+		size = round_up_power_2(size);
+	}
 
 	size_t words = ALIGN(size) / WORD_SIZE;
+
 	size_t extend_size;
 	char **bp;
 
