@@ -35,7 +35,7 @@ team_t team = {
     "qhv200@nyu.edu"
 };
 
-#define MAX_POWER 21
+#define MAX_POWER 50
 #define TAKEN 1
 #define FREE 0
 
@@ -121,6 +121,7 @@ static void *find_free_block(size_t words);
 static void alloc_free_block(void *bp, size_t words);
 static void place_block_into_free_list(char **bp);
 static void remove_block_from_free_list(char **bp);
+void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size);
 
 int mm_check();
 
@@ -424,8 +425,8 @@ static void place_block_into_free_list(char **bp) {
  */
 int mm_init(void)
 {
-	// Store the pointer to the free list on the heap 
-	int even_max_power = EVENIZE(MAX_POWER); // Maintain alignment 
+	// Store the pointer to the free list on the heap
+	int even_max_power = EVENIZE(MAX_POWER); // Maintain alignment
 	if ((long)(free_lists = mem_sbrk(even_max_power*sizeof(char *))) == -1)
 		return -1;
 
@@ -456,7 +457,7 @@ int mm_init(void)
 		// need to place into free list because extend_heap does not place it
 		place_block_into_free_list(new_block);
 
-	mm_check();
+	// mm_check();
     return 0;
 }
 
@@ -466,6 +467,7 @@ int mm_init(void)
 
 void *mm_malloc(size_t size)
 {
+
 	size_t words = ALIGN(size) / WORD_SIZE;
 	size_t extend_size;
 	char **bp;
@@ -518,11 +520,27 @@ void mm_free(void *ptr)
     place_block_into_free_list(ptr);
 }
 
-/*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
- */
 void *mm_realloc(void *ptr, size_t size)
 {
+	static int previous_size;
+	int buffer_size;
+	int diff = abs(size - previous_size);
+
+	if ((diff % 128)) {
+		buffer_size = 128;
+	} else {
+		buffer_size = 1000;
+	}
+
+	void * return_value = mm_realloc_wrapped(ptr, size, buffer_size);
+
+	previous_size = size;
+	return return_value;
+}
+
+void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size)
+{
+
 	// equivalent to mm_malloc if ptr is NULL
 	if (ptr == NULL) {
 		return mm_malloc(ptr);
@@ -534,18 +552,25 @@ void *mm_realloc(void *ptr, size_t size)
 
 	// get intended and current size
 	size_t new_size = ALIGN(size) / WORD_SIZE; // in words
+	// size_t size_with_buffer = 1 << (find_free_list_index(new_size) + 1);
+	size_t size_with_buffer = new_size + buffer_size;
 	size_t old_size = GET_SIZE(bp); // in words
+	// printf("old:%u new:%u with_buf:%u\n", old_size, new_size, size_with_buffer);
+
+	if (size_with_buffer == old_size && new_size <= size_with_buffer) {
+		return bp + HDR_SIZE;
+	}
 
 	// equivalent to mm_free if size == 0
 	if (new_size == 0) {
 		mm_free(ptr);
 		return NULL;
-	} else if (new_size < old_size) { // checks if can avoid reallocating
-		PUT_WORD(bp, PACK(old_size, FREE));
-    PUT_WORD(FTRP(bp), PACK(old_size, FREE));
-		alloc_free_block(bp, new_size);
+	// } else if (new_size < old_size) { // checks if can avoid reallocating
+	// 	PUT_WORD(bp, PACK(old_size, FREE));
+  //   PUT_WORD(FTRP(bp), PACK(old_size, FREE));
+	// 	alloc_free_block(bp, new_size);
 	} else if (new_size > old_size) {
-		if (GET_SIZE(NEXT_BLOCK_IN_HEAP(bp)) + old_size + 2 >= new_size &&
+		if (GET_SIZE(NEXT_BLOCK_IN_HEAP(bp)) + old_size + 2 >= size_with_buffer &&
 				GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == TAKEN &&
 				GET_STATUS(NEXT_BLOCK_IN_HEAP(bp)) == FREE
 		) { // checks if possible to merge with previous block in memory
@@ -553,8 +578,8 @@ void *mm_realloc(void *ptr, size_t size)
 	    PUT_WORD(FTRP(bp), PACK(old_size, FREE));
 
 			bp = coalesce(bp);
-			alloc_free_block(bp, new_size);
-		} else if (GET_SIZE(PREV_BLOCK_IN_HEAP(bp)) + old_size + 2 >= new_size &&
+			alloc_free_block(bp, size_with_buffer);
+		} else if (GET_SIZE(PREV_BLOCK_IN_HEAP(bp)) + old_size + 2 >= size_with_buffer &&
 							 GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == FREE &&
 						 	 GET_STATUS(NEXT_BLOCK_IN_HEAP(bp)) == TAKEN
 		) { // checks if possible to merge with next block in memory
@@ -564,8 +589,8 @@ void *mm_realloc(void *ptr, size_t size)
  			bp = coalesce(bp);
 
 			memmove(bp + 1, old + 1, old_size * WORD_SIZE);
- 			alloc_free_block(bp, new_size);
-		} else if (GET_SIZE(PREV_BLOCK_IN_HEAP(bp)) + GET_SIZE(NEXT_BLOCK_IN_HEAP(bp)) + old_size + 4 >= new_size &&
+ 			alloc_free_block(bp, size_with_buffer);
+		} else if (GET_SIZE(PREV_BLOCK_IN_HEAP(bp)) + GET_SIZE(NEXT_BLOCK_IN_HEAP(bp)) + old_size + 4 >= size_with_buffer &&
 							 GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == FREE &&
 							 GET_STATUS(NEXT_BLOCK_IN_HEAP(bp)) == FREE
 		) { // checks if possible to merge with both prev and next block in memory
@@ -575,9 +600,9 @@ void *mm_realloc(void *ptr, size_t size)
  			bp = coalesce(bp);
 
 			memmove(bp + 1, old + 1, old_size * WORD_SIZE);
-			alloc_free_block(bp, new_size);
+			alloc_free_block(bp, size_with_buffer);
 		} else { // end case: if no optimization possible, just do brute force realloc
-			bp = (char **)mm_malloc(new_size*WORD_SIZE + WORD_SIZE) - 1;
+			bp = (char **)mm_malloc(size_with_buffer*WORD_SIZE + WORD_SIZE) - 1;
 
 			if (bp == NULL) {
 				return NULL;
@@ -631,7 +656,7 @@ static void check_contiguous_free_block_coalesced()
 {
 	char ** bp = heap_ptr;
 
-	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog 
+	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog
 		should_coalesce_with_next_block(bp);
 		bp = NEXT_BLOCK_IN_HEAP(bp);
 	}
@@ -644,7 +669,7 @@ static void is_valid_free_block(char ** bp)
 	size_t size_in_hdr = GET_SIZE(bp);
 	size_t size_in_ftr = GET_SIZE(FTRP(bp));
 
-	// Check size in hdr == size in ftr 
+	// Check size in hdr == size in ftr
 	if (size_in_hdr != size_in_ftr) {
 		printf("Free block %p has different sizes in hdr and ftr", bp);
 		assert(0);
@@ -668,7 +693,7 @@ static void should_be_in_free_list(char ** bp)
 	int index = find_free_list_index(size);
 
 	if (GET_FREE_LIST_PTR(index) == bp)
-		return; // Bp at the beginning of a free list 
+		return; // Bp at the beginning of a free list
 
 	// Every block after the first block should have either a prev or next_block
 	char **prev_block = GET_PRED(bp);
@@ -684,7 +709,7 @@ static void check_all_free_blocks_in_free_list()
 {
 	char ** bp = heap_ptr;
 
-	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog 
+	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog
 		if (GET_STATUS(bp) == FREE) {
 			should_be_in_free_list(bp);
 		}
@@ -698,7 +723,7 @@ static void check_all_free_blocks_valid_ftr_hdr()
 {
 	char ** bp = heap_ptr;
 
-	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog 
+	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog
 		if (GET_STATUS(bp) == FREE) {
 			is_valid_free_block(bp);
 		}
@@ -723,10 +748,10 @@ static void check_ptrs_valid_heap_address()
 
 	char ** bp = heap_ptr;
 
-	do {	
+	do {
 		is_valid_heap_address(bp, heap_lo, heap_hi);
 		bp = NEXT_BLOCK_IN_HEAP(bp);
-	} while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0); // Haven't hit epilog 
+	} while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0); // Haven't hit epilog
 
 	printf("check_ptrs_valid_heap_address passed.\n");
 
@@ -738,9 +763,8 @@ int mm_check()
 	check_free_blocks_marked_free();
 	check_contiguous_free_block_coalesced();
 	check_all_free_blocks_in_free_list();
-	check_all_free_blocks_valid_ftr_hdr(); 
+	check_all_free_blocks_valid_ftr_hdr();
 	check_ptrs_valid_heap_address();
-	// Do not check for overlapping block because mdriver helps enforce 
+	// Do not check for overlapping block because mdriver helps enforce
 	printf("MM CHECK FINISHED SUCCESSFUL.\n\n");
 }
-
