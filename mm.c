@@ -1,16 +1,16 @@
 /*
- * We use explitict segregated free lists with rounding to upper power of 2 as the class equivalence condition 
- * Blocks within each class are sorted based on size in descending order 
- * 
- * Format of allocated block and free block are shown below 
+ * We use explitict segregated free lists with rounding to upper power of 2 as the class equivalence condition
+ * Blocks within each class are sorted based on size in descending order
+ *
+ * Format of allocated block and free block are shown below
 
 ///////////////////////////////// Block information /////////////////////////////////////////////////////////
 /*
- 
+
 A   : Allocated? (1: true, 0:false)
- 
+
  < Allocated Block >
- 
+
              31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
 bp --->     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
  Header :   |                              size of the block                                       |  |  | A|
@@ -23,9 +23,9 @@ bp --->     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+-
             +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
  Footer :   |                              size of the block                                       |     | A|
             +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
- 
+
  < Free block >
- 
+
              31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
  bp --->    +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
  Header :   |                              size of the block                                       |  |  | A|
@@ -40,7 +40,7 @@ bp --->     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+-
             +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
  Footer :   |                              size of the block                                       |     | A|
             +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
- 
+
  ///////////////////////////////// End of Block information /////////////////////////////////////////////////////////
  // This visual text-based description is taken from: https://github.com/mightydeveloper/Malloc-Lab/blob/master/mm.c
  *
@@ -582,7 +582,7 @@ int round_to_thousand(size_t x)
 }
 
 // Calculate the diff between previous request size and current request
-// Determine the buffer size of the newly reallocated block based on this diff 
+// Determine the buffer size of the newly reallocated block based on this diff
 // Call mm_realloc_wrapped to perform the actual reallocation
 void *mm_realloc(void *ptr, size_t size)
 {
@@ -602,8 +602,19 @@ void *mm_realloc(void *ptr, size_t size)
 	return return_value;
 }
 
-// Realloc a block 
-// TODO: Vasily, can you type of the description of this block here
+// Realloc a block
+/*
+	mm_realloc:
+	if the pointer given is NULL, behaves as malloc would
+	if the size given is zero, behaves as free would
+
+	As an optamizing, checks if it is possible to use neighboring blocks
+	and coalesce so as to avoid allocating new blocks.
+
+	If that is not possible, simple reallocates based on alloc and free.
+
+	Uses buffer to not have to reallocate often.
+*/
 void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size)
 {
 
