@@ -415,6 +415,7 @@ static void remove_block_from_free_list(char **bp) {
 
 /*
 	Places the block into the free list based on block size.
+	Keeps free list sorted.
 */
 static void place_block_into_free_list(char **bp) {
     size_t size = GET_SIZE(bp);
@@ -476,6 +477,10 @@ static void place_block_into_free_list(char **bp) {
 
 /*
  * mm_init - initialize the malloc package.
+ Sets the free list to beginning of heap.
+
+ Returns -1 on error.
+ Sets initial epilog at the end.
  */
 int mm_init(void)
 {
@@ -516,6 +521,9 @@ int mm_init(void)
 
 /*
 	Input is in bytes
+	Returns NULL on no memory or on size 0.
+	Uses blocks in free list as free blocks.
+	Returns pointer to block content.
 */
 void *mm_malloc(size_t size)
 {
