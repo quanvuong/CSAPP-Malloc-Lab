@@ -1,14 +1,51 @@
 /*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
+ * We use explitict segregated free lists with rounding to upper power of 2 as the class equivalence condition 
+ * Blocks within each class are sorted based on size in descending order 
+ * 
+ * Format of allocated block and free block are shown below 
+
+///////////////////////////////// Block information /////////////////////////////////////////////////////////
+/*
+ 
+A   : Allocated? (1: true, 0:false)
+ 
+ < Allocated Block >
+ 
+             31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
+bp --->     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+ Header :   |                              size of the block                                       |  |  | A|
+			+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+            |                                                                                               |
+            |                                                                                               |
+            .                              Payload			                                                .
+            .                                                                                               .
+            .                                                                                               .
+            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+ Footer :   |                              size of the block                                       |     | A|
+            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+ 
+ < Free block >
+ 
+             31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
+ bp --->    +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+ Header :   |                              size of the block                                       |  |  | A|
+ bp+4 --->  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+            |                        pointer to its predecessor in Segregated list                          |
+			+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+            |                        pointer to its successor in Segregated list                            |
+            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+            .                                                                                               .
+            .                                                                                               .
+            .                                                                                               .
+            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+ Footer :   |                              size of the block                                       |     | A|
+            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+ 
+ ///////////////////////////////// End of Block information /////////////////////////////////////////////////////////
+ // This visual text-based description is taken from: https://github.com/mightydeveloper/Malloc-Lab/blob/master/mm.c
  *
- * In this naive approach, a block is allocated by simply incrementing
- * the brk pointer.  A block is pure payload. There are no headers or
- * footers.  Blocks are never coalesced or reused. Realloc is
- * implemented directly using mm_malloc and mm_free.
- *
- * NOTE TO STUDENTS: Replace this header comment with your own header
- * comment that gives a high level description of your solution.
  */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
