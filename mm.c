@@ -122,7 +122,7 @@ static void alloc_free_block(void *bp, size_t words);
 static void place_block_into_free_list(char **bp);
 static void remove_block_from_free_list(char **bp);
 void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size);
-static int round_up_power_2 (int x);
+static int round_up_power_2(int x);
 
 int mm_check();
 
@@ -517,7 +517,7 @@ void *mm_malloc(size_t size)
 }
 
 /*
- * mm_free - Freeing a block does nothing.
+ * mm_free
  * Role:
     - change the status of block to free
     - coalesce the block
@@ -539,16 +539,24 @@ void mm_free(void *ptr)
     place_block_into_free_list(ptr);
 }
 
+int round_to_thousand(size_t x)
+{
+	return x % 1000 >= 500 ? x + 1000 - x % 1000 : x - x % 1000;
+}
+
+// Calculate the diff between previous request size and current request
+// Determine the buffer size of the newly reallocated block based on this diff 
+// Call mm_realloc_wrapped to perform the actual reallocation
 void *mm_realloc(void *ptr, size_t size)
 {
 	static int previous_size;
 	int buffer_size;
 	int diff = abs(size - previous_size);
 
-	if ((diff % 128)) {
-		buffer_size = 128;
+	if (diff < 1<<12 && diff % round_up_power_2(diff)) {
+		buffer_size = round_up_power_2(diff);
 	} else {
-		buffer_size = 1000;
+		buffer_size = round_to_thousand(size);
 	}
 
 	void * return_value = mm_realloc_wrapped(ptr, size, buffer_size);
@@ -557,6 +565,8 @@ void *mm_realloc(void *ptr, size_t size)
 	return return_value;
 }
 
+// Realloc a block 
+// TODO: Vasily, can you type of the description of this block here
 void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size)
 {
 
@@ -571,23 +581,16 @@ void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size)
 
 	// get intended and current size
 	size_t new_size = ALIGN(size) / WORD_SIZE; // in words
-	// size_t size_with_buffer = 1 << (find_free_list_index(new_size) + 1);
 	size_t size_with_buffer = new_size + buffer_size;
 	size_t old_size = GET_SIZE(bp); // in words
-	// printf("old:%u new:%u with_buf:%u\n", old_size, new_size, size_with_buffer);
 
 	if (size_with_buffer == old_size && new_size <= size_with_buffer) {
 		return bp + HDR_SIZE;
 	}
 
-	// equivalent to mm_free if size == 0
 	if (new_size == 0) {
 		mm_free(ptr);
 		return NULL;
-	// } else if (new_size < old_size) { // checks if can avoid reallocating
-	// 	PUT_WORD(bp, PACK(old_size, FREE));
-  //   PUT_WORD(FTRP(bp), PACK(old_size, FREE));
-	// 	alloc_free_block(bp, new_size);
 	} else if (new_size > old_size) {
 		if (GET_SIZE(NEXT_BLOCK_IN_HEAP(bp)) + old_size + 2 >= size_with_buffer &&
 				GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == TAKEN &&
@@ -631,9 +634,7 @@ void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size)
 			mm_free(old + 1);
 		}
 	}
-	// else if sizes equal, just return bp as is
 
-	// end of checks
 	return bp + HDR_SIZE;
 }
 
