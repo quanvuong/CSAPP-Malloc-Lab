@@ -35,7 +35,7 @@ team_t team = {
     "qhv200@nyu.edu"
 };
 
-#define MAX_POWER 21
+#define MAX_POWER 50
 #define TAKEN 1
 #define FREE 0
 
@@ -121,8 +121,26 @@ static void *find_free_block(size_t words);
 static void alloc_free_block(void *bp, size_t words);
 static void place_block_into_free_list(char **bp);
 static void remove_block_from_free_list(char **bp);
+void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size);
+static int round_up_power_2(int x);
 
 int mm_check();
+
+/// Round up to next higher power of 2 (return x if it's already a power
+/// of 2).
+/// Borrowed from http://stackoverflow.com/questions/364985/algorithm-for-finding-the-smallest-power-of-two-thats-greater-or-equal-to-a-giv
+static int round_up_power_2 (int x)
+{
+    if (x < 0)
+        return 0;
+    --x;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    return x+1;
+}
 
 /*
 	Find the index of the free list which given size belongs to.
@@ -424,8 +442,8 @@ static void place_block_into_free_list(char **bp) {
  */
 int mm_init(void)
 {
-	// Store the pointer to the free list on the heap 
-	int even_max_power = EVENIZE(MAX_POWER); // Maintain alignment 
+	// Store the pointer to the free list on the heap
+	int even_max_power = EVENIZE(MAX_POWER); // Maintain alignment
 	if ((long)(free_lists = mem_sbrk(even_max_power*sizeof(char *))) == -1)
 		return -1;
 
@@ -456,17 +474,20 @@ int mm_init(void)
 		// need to place into free list because extend_heap does not place it
 		place_block_into_free_list(new_block);
 
-	mm_check();
     return 0;
 }
 
 /*
 	Input is in bytes
 */
-
 void *mm_malloc(size_t size)
 {
+	if (size <= 1<<12) {
+		size = round_up_power_2(size);
+	}
+
 	size_t words = ALIGN(size) / WORD_SIZE;
+
 	size_t extend_size;
 	char **bp;
 
@@ -496,7 +517,7 @@ void *mm_malloc(size_t size)
 }
 
 /*
- * mm_free - Freeing a block does nothing.
+ * mm_free
  * Role:
     - change the status of block to free
     - coalesce the block
@@ -518,24 +539,103 @@ void mm_free(void *ptr)
     place_block_into_free_list(ptr);
 }
 
-/*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
- */
+int round_to_thousand(size_t x)
+{
+	return x % 1000 >= 500 ? x + 1000 - x % 1000 : x - x % 1000;
+}
+
+// Calculate the diff between previous request size and current request
+// Determine the buffer size of the newly reallocated block based on this diff 
+// Call mm_realloc_wrapped to perform the actual reallocation
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
+	static int previous_size;
+	int buffer_size;
+	int diff = abs(size - previous_size);
 
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
-    copySize = *(size_t *)((char *)oldptr - 4);
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
-    return newptr;
+	if (diff < 1<<12 && diff % round_up_power_2(diff)) {
+		buffer_size = round_up_power_2(diff);
+	} else {
+		buffer_size = round_to_thousand(size);
+	}
+
+	void * return_value = mm_realloc_wrapped(ptr, size, buffer_size);
+
+	previous_size = size;
+	return return_value;
+}
+
+// Realloc a block 
+// TODO: Vasily, can you type of the description of this block here
+void *mm_realloc_wrapped(void *ptr, size_t size, int buffer_size)
+{
+
+	// equivalent to mm_malloc if ptr is NULL
+	if (ptr == NULL) {
+		return mm_malloc(ptr);
+	}
+
+	// adjust to be at start of block
+	char **old = (char **)ptr - 1;
+	char **bp = (char **)ptr - 1;
+
+	// get intended and current size
+	size_t new_size = ALIGN(size) / WORD_SIZE; // in words
+	size_t size_with_buffer = new_size + buffer_size;
+	size_t old_size = GET_SIZE(bp); // in words
+
+	if (size_with_buffer == old_size && new_size <= size_with_buffer) {
+		return bp + HDR_SIZE;
+	}
+
+	if (new_size == 0) {
+		mm_free(ptr);
+		return NULL;
+	} else if (new_size > old_size) {
+		if (GET_SIZE(NEXT_BLOCK_IN_HEAP(bp)) + old_size + 2 >= size_with_buffer &&
+				GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == TAKEN &&
+				GET_STATUS(NEXT_BLOCK_IN_HEAP(bp)) == FREE
+		) { // checks if possible to merge with previous block in memory
+			PUT_WORD(bp, PACK(old_size, FREE));
+	    PUT_WORD(FTRP(bp), PACK(old_size, FREE));
+
+			bp = coalesce(bp);
+			alloc_free_block(bp, size_with_buffer);
+		} else if (GET_SIZE(PREV_BLOCK_IN_HEAP(bp)) + old_size + 2 >= size_with_buffer &&
+							 GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == FREE &&
+						 	 GET_STATUS(NEXT_BLOCK_IN_HEAP(bp)) == TAKEN
+		) { // checks if possible to merge with next block in memory
+		  PUT_WORD(bp, PACK(old_size, FREE));
+ 	    PUT_WORD(FTRP(bp), PACK(old_size, FREE));
+
+ 			bp = coalesce(bp);
+
+			memmove(bp + 1, old + 1, old_size * WORD_SIZE);
+ 			alloc_free_block(bp, size_with_buffer);
+		} else if (GET_SIZE(PREV_BLOCK_IN_HEAP(bp)) + GET_SIZE(NEXT_BLOCK_IN_HEAP(bp)) + old_size + 4 >= size_with_buffer &&
+							 GET_STATUS(PREV_BLOCK_IN_HEAP(bp)) == FREE &&
+							 GET_STATUS(NEXT_BLOCK_IN_HEAP(bp)) == FREE
+		) { // checks if possible to merge with both prev and next block in memory
+			PUT_WORD(bp, PACK(old_size, FREE));
+ 	    PUT_WORD(FTRP(bp), PACK(old_size, FREE));
+
+ 			bp = coalesce(bp);
+
+			memmove(bp + 1, old + 1, old_size * WORD_SIZE);
+			alloc_free_block(bp, size_with_buffer);
+		} else { // end case: if no optimization possible, just do brute force realloc
+			bp = (char **)mm_malloc(size_with_buffer*WORD_SIZE + WORD_SIZE) - 1;
+
+			if (bp == NULL) {
+				return NULL;
+			}
+
+			memcpy(bp + 1, old + 1, old_size * WORD_SIZE);
+			mm_free(old + 1);
+		}
+	}
+
+	return bp + HDR_SIZE;
 }
 
 static void check_free_blocks_in_one_free_list_marked_free(char ** bp)
@@ -576,7 +676,7 @@ static void check_contiguous_free_block_coalesced()
 {
 	char ** bp = heap_ptr;
 
-	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog 
+	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog
 		should_coalesce_with_next_block(bp);
 		bp = NEXT_BLOCK_IN_HEAP(bp);
 	}
@@ -589,7 +689,7 @@ static void is_valid_free_block(char ** bp)
 	size_t size_in_hdr = GET_SIZE(bp);
 	size_t size_in_ftr = GET_SIZE(FTRP(bp));
 
-	// Check size in hdr == size in ftr 
+	// Check size in hdr == size in ftr
 	if (size_in_hdr != size_in_ftr) {
 		printf("Free block %p has different sizes in hdr and ftr", bp);
 		assert(0);
@@ -613,7 +713,7 @@ static void should_be_in_free_list(char ** bp)
 	int index = find_free_list_index(size);
 
 	if (GET_FREE_LIST_PTR(index) == bp)
-		return; // Bp at the beginning of a free list 
+		return; // Bp at the beginning of a free list
 
 	// Every block after the first block should have either a prev or next_block
 	char **prev_block = GET_PRED(bp);
@@ -629,7 +729,7 @@ static void check_all_free_blocks_in_free_list()
 {
 	char ** bp = heap_ptr;
 
-	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog 
+	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog
 		if (GET_STATUS(bp) == FREE) {
 			should_be_in_free_list(bp);
 		}
@@ -643,7 +743,7 @@ static void check_all_free_blocks_valid_ftr_hdr()
 {
 	char ** bp = heap_ptr;
 
-	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog 
+	while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0) { // Haven't hit epilog
 		if (GET_STATUS(bp) == FREE) {
 			is_valid_free_block(bp);
 		}
@@ -668,10 +768,10 @@ static void check_ptrs_valid_heap_address()
 
 	char ** bp = heap_ptr;
 
-	do {	
+	do {
 		is_valid_heap_address(bp, heap_lo, heap_hi);
 		bp = NEXT_BLOCK_IN_HEAP(bp);
-	} while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0); // Haven't hit epilog 
+	} while (GET_STATUS(bp) != TAKEN && GET_SIZE(bp) != 0); // Haven't hit epilog
 
 	printf("check_ptrs_valid_heap_address passed.\n");
 
@@ -683,9 +783,8 @@ int mm_check()
 	check_free_blocks_marked_free();
 	check_contiguous_free_block_coalesced();
 	check_all_free_blocks_in_free_list();
-	check_all_free_blocks_valid_ftr_hdr(); 
+	check_all_free_blocks_valid_ftr_hdr();
 	check_ptrs_valid_heap_address();
-	// Do not check for overlapping block because mdriver helps enforce 
+	// Do not check for overlapping block because mdriver helps enforce
 	printf("MM CHECK FINISHED SUCCESSFUL.\n\n");
 }
-
